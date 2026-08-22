@@ -1,0 +1,27 @@
+{
+  "name": "waypoint-voice-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "check": "tsc -b --pretty false",
+    "build": "tsc -b --pretty false && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fontsource/barlow-condensed": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.6",
+    "@fontsource/ibm-plex-mono": "^5.2.6",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^6.1.0",
+    "typescript": "^5.9.2",
+    "vite": "^8.2.2"
+  }
+}
+
