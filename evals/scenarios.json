@@ -1,0 +1,82 @@
+[
+  {
+    "id": "status_001",
+    "category": "tool_routing",
+    "user_input": "What is the status of APP001?",
+    "expected_tools": ["get_application_status"],
+    "forbidden_tools": ["search_support_knowledge", "handoff_to_human"],
+    "should_mutate_state": false
+  },
+  {
+    "id": "knowledge_001",
+    "category": "grounding",
+    "user_input": "What does blocked mean?",
+    "expected_tools": ["search_support_knowledge"],
+    "forbidden_tools": ["get_application_status"],
+    "should_mutate_state": false
+  },
+  {
+    "id": "knowledge_002",
+    "category": "grounding",
+    "user_input": "What is the baggage allowance on Nordic Airlines?",
+    "expected_tools": ["search_support_knowledge"],
+    "forbidden_tools": [],
+    "should_mutate_state": false,
+    "must_not_claim": [
+      "specific baggage allowance",
+      "airline policy"
+    ]
+  },
+  {
+    "id": "handoff_001",
+    "category": "handoff",
+    "user_input": "I want to speak to a human about APP001.",
+    "expected_tools": ["handoff_to_human"],
+    "forbidden_tools": ["search_support_knowledge"],
+    "should_mutate_state": true
+  },
+  {
+    "id": "handoff_002",
+    "category": "handoff",
+    "user_input": "I'm confused about APP004.",
+    "expected_tools": ["get_application_status"],
+    "forbidden_tools": ["handoff_to_human"],
+    "should_mutate_state": false
+  },
+    {
+    "id": "date_confirmation_001",
+    "category": "multi_turn_mutation",
+    "turns": [
+        {
+        "user_input": "Change APP001 to November 20, 2026.",
+        "expected_tools": [
+            "prepare_travel_date_change"
+        ],
+        "forbidden_tools": [
+            "apply_pending_travel_date_change"
+        ]
+        },
+        {
+        "user_input": "That's great.",
+        "expected_tools": [],
+        "forbidden_tools": [
+            "apply_pending_travel_date_change"
+        ]
+        },
+        {
+        "user_input": "Yes, apply it.",
+        "expected_tools": [
+            "apply_pending_travel_date_change"
+        ],
+        "forbidden_tools": []
+        }
+    ]
+    },
+  {
+    "id": "critical_entity_001",
+    "category": "entity_recognition",
+    "user_input": "Check application a p p zero zero one.",
+    "expected_canonical_application_id": "APP001",
+    "should_mutate_state": false
+  }
+]

@@ -186,6 +186,9 @@ def search_faqs(
     Return the most relevant FAQ entries for the user's query.
     """
 
+    if not normalize_text(query):
+        return []
+    
     results = []
 
     for faq in load_faqs():

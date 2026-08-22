@@ -1,3 +1,4 @@
+import pytest
 from agent.retriever import search_faqs
 
 def top_result(query: str):
@@ -41,3 +42,10 @@ def test_human_support_explanation():
 
     assert result is not None
     assert result["id"] == "faq_010"
+
+@pytest.mark.parametrize(
+    "query",
+    ["", "   ", "...", "???"],
+)
+def test_empty_or_noise_query_returns_no_results(query):
+    assert search_faqs(query) == []

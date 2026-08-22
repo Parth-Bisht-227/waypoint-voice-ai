@@ -15,7 +15,7 @@ from livekit.agents import (
     inference,
     utils,
 )
-from retriever import search_faqs
+from agent.retriever import search_faqs
 
 from livekit.plugins import (
     cartesia,
