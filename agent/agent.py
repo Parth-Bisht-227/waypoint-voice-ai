@@ -16,6 +16,10 @@ from livekit.agents import (
     utils,
 )
 from agent.retriever import search_faqs
+from observability.session_observer import (
+    attach_session_observers,
+    save_session_report,
+)
 
 from livekit.plugins import (
     cartesia,
@@ -571,7 +575,11 @@ server = AgentServer()
 # This is the process that waits for LiveKit to assign realtime agent sessions/jobs.
 # currently it runs locally on the system...
 
-@server.rtc_session(agent_name="waypoint-agent") # this registers the fn as handler for realtime sessions for the named agent...
+# This registers the function as the named realtime session handler.
+@server.rtc_session(
+    agent_name="waypoint-agent",
+    on_session_end=save_session_report,
+)
 async def waypoint_agent(ctx: agents.JobContext):
 
     # this represents one realtime conversation
@@ -608,6 +616,9 @@ async def waypoint_agent(ctx: agents.JobContext):
             },
         ),
     )
+
+    attach_session_observers(session)
+
     # vad asks --> is the user currently producing speech like audio?
     # detects the speech and silence in btw, but it does not necessarily understand whether we've finished
     # our thought or not
