@@ -65,9 +65,9 @@
   {
     "id": "faq_010",
     "category": "human_support",
-    "question": "Can I speak to a human?",
-    "answer": "Yes. Waypoint can create a human-support request for a valid application. Creating the request does not itself mean that a live transfer has already occurred.",
-    "keywords": ["human", "agent", "person", "support", "handoff"]
+    "question": "How does human support work?",
+    "answer": "Waypoint can create a human-support request for a valid application. Creating the request does not mean that a live transfer has already occurred.",
+    "keywords": ["human support", "handoff process", "support request", "human assistance"]
   },
   {
     "id": "faq_011",

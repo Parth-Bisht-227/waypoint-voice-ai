@@ -87,6 +87,9 @@ STOP_WORDS = {
     "can",
     "could",
     "would",
+
+    # Domain-generic words
+    "application",
 }
 
 def normalize_text(text: str) -> str:
