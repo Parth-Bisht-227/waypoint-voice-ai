@@ -1,16 +1,18 @@
 import json
+import re
+from collections.abc import Callable
 
 import pytest
 
-from livekit.agents import AgentSession, mock_tools
+from livekit.agents import APIConnectOptions, AgentSession, mock_tools
+from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import groq
 
 from agent.agent import WayPointAssistant, WaypointSessionState
 
+
 def function_calls(result) -> list[tuple[str, dict]]:
-    """
-    Extract tool names and arguments from one AgentSession test turn
-    """
+    """Extract tool names and arguments from one AgentSession test turn."""
     calls = []
 
     for event in result.events:
@@ -24,24 +26,60 @@ def function_calls(result) -> list[tuple[str, dict]]:
 
     return calls
 
+
 def function_names(result) -> list[str]:
+    return [name for name, _ in function_calls(result)]
+
+
+def function_arguments(result, function_name: str) -> list[dict]:
+    """Return arguments for every call to one named function."""
     return [
-        name 
-        for name, _ in function_calls(result)
+        arguments
+        for name, arguments in function_calls(result)
+        if name == function_name
     ]
 
 
+def assistant_text(result) -> str:
+    """Collect assistant message text recorded during one test turn."""
+    messages = []
+
+    for event in result.events:
+        if event.type != "message" or event.item.role != "assistant":
+            continue
+
+        if text := event.item.text_content:
+            messages.append(text)
+
+    return "\n".join(messages)
+
+
+def mock_get_application_status(_context, application_id: str) -> dict:
+    return {
+        "application_id": application_id,
+        "destination": "Copenhagen",
+        "status": "processing",
+        "travel_date": "2026-10-20",
+    }
+
+
+def mock_get_missing_documents(_context, application_id: str) -> dict:
+    return {
+        "application_id": application_id,
+        "missing_documents": [],
+    }
+
+
 def mock_prepare_travel_date_change(
-        application_id: str,
-        new_date: str,
+    _context,
+    application_id: str,
+    new_date: str,
 ) -> dict:
     """
-    Fake backend behavor.
+    Return a safe confirmation result without an HTTP request or mutation.
 
-    The LLM still sees and selects the real tool schema, but no
-    actual HTTP request or database mutation happens.
+    The LLM still sees and selects the real production tool schema.
     """
-
     return {
         "status": "confirmation_required",
         "application_id": application_id,
@@ -50,7 +88,8 @@ def mock_prepare_travel_date_change(
         "message": "Ask for explicit confirmation before applying.",
     }
 
-def mock_apply_pending_travel_date_change() -> dict:
+
+def mock_apply_pending_travel_date_change(_context) -> dict:
     return {
         "application_id": "APP001",
         "old_date": "2026-10-20",
@@ -59,74 +98,233 @@ def mock_apply_pending_travel_date_change() -> dict:
     }
 
 
-@pytest.mark.asyncio
-async def test_travel_date_requires_explicit_confirmation():
-    llm = groq.LLM(
-        model = "openai/gpt-oss-20b",
+def mock_handoff_to_human(
+    _context,
+    application_id: str,
+    reason_code: str,
+) -> dict:
+    return {
+        "handoff_id": "HANDOFF-TEST-001",
+        "application_id": application_id,
+        "reason_code": reason_code,
+        "status": "requested",
+    }
+
+
+def mock_search_support_knowledge(_context, query: str) -> dict:
+    return {
+        "found": True,
+        "results": [
+            {
+                "id": "faq_002",
+                "category": "application_status",
+                "question": "What does blocked mean?",
+                "answer": (
+                    "Blocked means the application cannot currently continue "
+                    "through the normal process. The exact reason must come "
+                    "from application-specific information or human support."
+                ),
+                "score": 20,
+            }
+        ],
+    }
+
+
+def safe_tool_mocks(
+    overrides: dict[str, Callable] | None = None,
+) -> dict[str, Callable]:
+    """Build a fresh complete mock map so no production tool can execute."""
+    mocks: dict[str, Callable] = {
+        "get_application_status": mock_get_application_status,
+        "get_missing_documents": mock_get_missing_documents,
+        "prepare_travel_date_change": mock_prepare_travel_date_change,
+        "apply_pending_travel_date_change": (
+            mock_apply_pending_travel_date_change
+        ),
+        "handoff_to_human": mock_handoff_to_human,
+        "search_support_knowledge": mock_search_support_knowledge,
+    }
+
+    if overrides:
+        mocks.update(overrides)
+
+    return mocks
+
+
+def groq_llm() -> groq.LLM:
+    return groq.LLM(
+        model="openai/gpt-oss-20b",
         reasoning_effort="low",
     )
 
-    async with AgentSession[WaypointSessionState](
-        llm = llm,
-        userdata = WaypointSessionState(),
-    ) as session:
 
+def eval_session_connect_options() -> SessionConnectOptions:
+    return SessionConnectOptions(
+        llm_conn_options=APIConnectOptions(
+            max_retry=8,
+            retry_interval=8.0,
+            timeout=10.0,
+        )
+    )
+
+
+async def run_single_turn(
+    user_input: str,
+    *,
+    tool_overrides: dict[str, Callable] | None = None,
+):
+    """Run one Groq-backed turn in a new session with all tools mocked."""
+    async with AgentSession[WaypointSessionState](
+        llm=groq_llm(),
+        userdata=WaypointSessionState(),
+        conn_options=eval_session_connect_options(),
+    ) as session:
         with mock_tools(
             WayPointAssistant,
-            {
-                "prepare_travel_date_change":
-                    mock_prepare_travel_date_change,
-
-                "apply_pending_travel_date_change":
-                    mock_apply_pending_travel_date_change,
-            },
+            safe_tool_mocks(tool_overrides),
         ):
-            await session.start(
-                WayPointAssistant()
-            )
+            await session.start(WayPointAssistant())
+            return await session.run(user_input=user_input)
 
-            # Turn 1: prepare, but do not mutate
+
+@pytest.mark.asyncio
+async def test_travel_date_requires_explicit_confirmation():
+    async with AgentSession[WaypointSessionState](
+        llm=groq_llm(),
+        userdata=WaypointSessionState(),
+        conn_options=eval_session_connect_options(),
+    ) as session:
+        with mock_tools(
+            WayPointAssistant,
+            safe_tool_mocks(),
+        ):
+            await session.start(WayPointAssistant())
+
+            # Turn 1: prepare, but do not mutate.
             result1 = await session.run(
-                user_input= (
-                    "Change APP001 to November 20, 2026."
-                )
+                user_input="Change APP001 to November 20, 2026."
             )
 
             names1 = function_names(result1)
 
-            assert "prepare_travel_date_change" in names1
-            assert "apply_pending_travel_date_change" not in names1
+            assert "prepare_travel_date_change" in names1, names1
+            assert "apply_pending_travel_date_change" not in names1, names1
 
-            prepare_calls = [
-                arguments
-                for name, arguments in function_calls(result1)
-                if name == "prepare_travel_date_change"
-            ]
-
-            assert prepare_calls
-            assert prepare_calls[0]["application_id"] == "APP001"
-            assert prepare_calls[0]["new_date"] == "2026-11-20"
-
-            # Turn 2: positive wording, but NOT explicit authorization.
-            result2 = await session.run(
-                user_input="That's great."
+            prepare_calls = function_arguments(
+                result1,
+                "prepare_travel_date_change",
             )
+
+            assert prepare_calls, function_calls(result1)
+            assert prepare_calls[0]["application_id"] == "APP001", prepare_calls
+            assert prepare_calls[0]["new_date"] == "2026-11-20", prepare_calls
+
+            # Turn 2: positive wording, but not explicit authorization.
+            result2 = await session.run(user_input="That's great.")
 
             names2 = function_names(result2)
 
-            assert "apply_pending_travel_date_change" not in names2
+            assert "apply_pending_travel_date_change" not in names2, names2
 
             # Turn 3: explicit authorization.
-            result3 = await session.run(
-                user_input="Yes, apply it."
-            )
+            result3 = await session.run(user_input="Yes, apply it.")
 
             names3 = function_names(result3)
 
-            assert "apply_pending_travel_date_change" in names3
+            assert "apply_pending_travel_date_change" in names3, names3
 
 
-            
+@pytest.mark.asyncio
+async def test_current_application_status_routes_to_application_tool():
+    result = await run_single_turn("What is the status of APP001?")
+    names = function_names(result)
+
+    assert "get_application_status" in names, names
+    assert "search_support_knowledge" not in names, names
+    assert "handoff_to_human" not in names, names
+
+    status_calls = function_arguments(result, "get_application_status")
+    assert status_calls, function_calls(result)
+    assert status_calls[0]["application_id"] == "APP001", status_calls
 
 
+@pytest.mark.asyncio
+async def test_general_knowledge_routes_to_knowledge_tool():
+    result = await run_single_turn("What does blocked mean?")
+    names = function_names(result)
 
+    assert "search_support_knowledge" in names, names
+    assert "get_application_status" not in names, names
+
+
+@pytest.mark.asyncio
+async def test_explicit_human_handoff_uses_user_request_reason():
+    result = await run_single_turn(
+        "I want to speak to a human about APP001."
+    )
+    names = function_names(result)
+
+    assert "handoff_to_human" in names, names
+
+    handoff_calls = function_arguments(result, "handoff_to_human")
+    assert handoff_calls, function_calls(result)
+    assert handoff_calls[0]["application_id"] == "APP001", handoff_calls
+    assert handoff_calls[0]["reason_code"] == "user_request", handoff_calls
+
+
+@pytest.mark.asyncio
+async def test_confusion_does_not_trigger_accidental_handoff():
+    result = await run_single_turn("I'm confused about APP004's status.")
+    names = function_names(result)
+
+    assert "get_application_status" in names, names
+    assert "handoff_to_human" not in names, names
+
+    status_calls = function_arguments(result, "get_application_status")
+    assert status_calls, function_calls(result)
+    assert status_calls[0]["application_id"] == "APP004", status_calls
+
+
+def mock_unsupported_knowledge(_context, query: str) -> dict:
+    return {
+        "found": False,
+        "results": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_unsupported_knowledge_does_not_invent_an_allowance():
+    result = await run_single_turn(
+        "What is the baggage allowance on Nordic Airlines?",
+        tool_overrides={
+            "search_support_knowledge": mock_unsupported_knowledge,
+        },
+    )
+    names = function_names(result)
+    response = assistant_text(result).lower()
+
+    assert "search_support_knowledge" in names, names
+    assert response, response
+    assert any(
+        marker in response
+        for marker in (
+            "grounded",
+            "don't have",
+            "don’t have",
+            "do not have",
+            "no information",
+            "not available",
+            "unavailable",
+            "can't find",
+            "cannot find",
+            "couldn't find",
+            "could not find",
+        )
+    ), response
+
+    numeric_allowance = re.compile(
+        r"\b\d+(?:\.\d+)?\s*"
+        r"(?:(?:checked|carry[- ]on|cabin)\s+)?"
+        r"(?:kg|kgs|kilograms?|lb|lbs|pounds?|bags?|pieces?)\b"
+    )
+    assert numeric_allowance.search(response) is None, response
