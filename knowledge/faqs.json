@@ -1,0 +1,107 @@
+[
+  {
+    "id": "faq_001",
+    "category": "application_status",
+    "question": "What does processing mean?",
+    "answer": "Processing means the application is still being reviewed. It has not yet reached a final approved, blocked, or action-required state.",
+    "keywords": ["processing", "review", "status", "application"]
+  },
+  {
+    "id": "faq_002",
+    "category": "application_status",
+    "question": "What does blocked mean?",
+    "answer": "Blocked means the application cannot currently continue through the normal process. The exact reason must come from application-specific information or human support; the assistant should not guess the cause.",
+    "keywords": ["blocked", "status", "stuck", "cannot continue"]
+  },
+  {
+    "id": "faq_003",
+    "category": "application_status",
+    "question": "What does action required mean?",
+    "answer": "Action required means the application currently needs additional input or action before processing can continue. Application-specific tools should be used to determine whether any missing documents are recorded.",
+    "keywords": ["action required", "action", "status", "missing documents"]
+  },
+  {
+    "id": "faq_004",
+    "category": "application_status",
+    "question": "What does approved mean?",
+    "answer": "Approved means the application has reached an approved state in the Waypoint system.",
+    "keywords": ["approved", "approval", "status"]
+  },
+  {
+    "id": "faq_005",
+    "category": "documents",
+    "question": "Does submitting a missing document guarantee approval?",
+    "answer": "No. Providing a missing document does not guarantee approval or guarantee that a blocked application will be resolved.",
+    "keywords": ["missing document", "approval", "guarantee", "blocked"]
+  },
+  {
+    "id": "faq_006",
+    "category": "documents",
+    "question": "How can I find out which documents are missing?",
+    "answer": "The assistant can check the current application record for any documents marked as missing when a valid application ID is provided.",
+    "keywords": ["missing documents", "documents", "required", "application id"]
+  },
+  {
+    "id": "faq_007",
+    "category": "travel_date",
+    "question": "Can I change my travel date?",
+    "answer": "Waypoint supports travel-date changes for an existing application. The requested date must be in the future, and the assistant must ask for explicit confirmation before applying the change.",
+    "keywords": ["travel date", "change date", "reschedule", "future date"]
+  },
+  {
+    "id": "faq_008",
+    "category": "travel_date",
+    "question": "Why do I need to confirm a travel-date change?",
+    "answer": "Travel-date changes modify application state. Waypoint asks for explicit confirmation of the exact proposed date before applying the change to reduce accidental updates.",
+    "keywords": ["confirmation", "travel date", "change", "confirm"]
+  },
+  {
+    "id": "faq_009",
+    "category": "travel_date",
+    "question": "Can I change my mind before confirming a travel-date change?",
+    "answer": "Yes. If the requested date changes before confirmation, the assistant can prepare the newly requested date instead. Only the most recently prepared date should be applied after explicit confirmation.",
+    "keywords": ["change mind", "correct date", "confirmation", "travel date"]
+  },
+  {
+    "id": "faq_010",
+    "category": "human_support",
+    "question": "Can I speak to a human?",
+    "answer": "Yes. Waypoint can create a human-support request for a valid application. Creating the request does not itself mean that a live transfer has already occurred.",
+    "keywords": ["human", "agent", "person", "support", "handoff"]
+  },
+  {
+    "id": "faq_011",
+    "category": "human_support",
+    "question": "When should the assistant request human support?",
+    "answer": "Human support is appropriate when the user explicitly asks for it or when the request cannot be safely resolved because of unsupported functionality, repeated clarification failure, backend failure, conflicting state, or persistent uncertainty about a critical identifier.",
+    "keywords": ["human support", "handoff", "escalation", "failure"]
+  },
+  {
+    "id": "faq_012",
+    "category": "application_id",
+    "question": "Why does the assistant ask for my application ID?",
+    "answer": "The application ID identifies which application record should be accessed. Application-specific status, document, date-change, and handoff operations require a usable application ID.",
+    "keywords": ["application id", "identifier", "why", "application"]
+  },
+  {
+    "id": "faq_013",
+    "category": "application_id",
+    "question": "What happens if the application ID cannot be understood?",
+    "answer": "The assistant should ask the user to repeat or clarify the application ID rather than guessing or using an uncertain identifier.",
+    "keywords": ["application id", "unclear", "repeat", "misheard", "guess"]
+  },
+  {
+    "id": "faq_014",
+    "category": "reliability",
+    "question": "What happens if an update fails?",
+    "answer": "The assistant should not claim that an update succeeded unless the backend confirms success. If a request fails or its outcome is uncertain, the assistant should explain that briefly rather than inventing a result.",
+    "keywords": ["failure", "update failed", "backend", "success"]
+  },
+  {
+    "id": "faq_015",
+    "category": "scope",
+    "question": "What can Waypoint help with?",
+    "answer": "Waypoint can provide grounded support information, check application status and missing documents, prepare and apply confirmed travel-date changes, and request human support. It should not claim capabilities that are not exposed through its tools or knowledge base.",
+    "keywords": ["help", "capabilities", "what can you do", "support"]
+  }
+]

@@ -15,6 +15,7 @@ from livekit.agents import (
     inference,
     utils,
 )
+from retriever import search_faqs
 
 from livekit.plugins import (
     cartesia,
@@ -158,7 +159,15 @@ class WayPointAssistant(Agent):
                 handoff_to_human returns successfully.
 
                 - Keep the spoken acknowledgement short after a successful handoff.
-
+                
+                KNOWLEDGE QUESTIONS
+                - For general Waypoint support, policy, capability, or explanatory questions,
+                use search_support_knowledge before answering.
+                - Answer only from the retrieved knowledge.
+                - If no relevant knowledge is found, say you do not have grounded information
+                for that question; do not invent an answer.
+                - Use application tools, not the knowledge tool, for current application state
+                such as status, travel date, or missing documents.
             """
         )
 
@@ -509,6 +518,41 @@ class WayPointAssistant(Agent):
             "status": data["status"],
         }
             
+    @function_tool()
+    async def search_support_knowledge(
+        self,
+        context: RunContext[WaypointSessionState],
+        query: str,
+    ) -> dict:
+        """
+        Search Waypoint's grounded support knowledge.
+
+        Use this for general support, policy, capability, and explanatory
+        questions that are not specific to the current state of an application.
+
+        Args:
+            query: The user's support question or a concise search query.
+        
+        """
+        results = search_faqs(
+            query = query,
+            top_k = 3,
+            min_score = 2,
+        )
+        if not results:
+            return {
+                "found": False,
+                "results": [],
+            }
+
+        return {
+            "found": True,
+            "results": results,
+        }
+
+    ''' path here is simply: LLM -> Py fn tool -> search_faqs() -> faqs.json cached in memory
+    -> top matches returned'''
+
 
 
         
