@@ -268,45 +268,12 @@ frontend/node_modules/
 
 The browser does not persist transcript history. The agent's end-of-session report may still contain conversation and usage data. Treat those reports as sensitive even in development, and do not share them without inspection.
 
-## 11. Before an integration demo
+## 11. Scope of this runbook
 
-For a concise 75–90 second portfolio recording, use
-[the demo recording guide](./DEMO_GUIDE.md). The checklist below is the longer
-engineering acceptance pass and is intentionally not optimized for video.
+This document covers reproducible local setup, development processes, tests,
+and troubleshooting. The project uses synthetic application data and is not
+configured for production deployment.
 
-With the token endpoint and event sender implemented:
-
-1. start FastAPI;
-2. start `waypoint-agent`;
-3. start Vite;
-4. confirm the card initially shows the authoritative `APP001` record;
-5. press `Talk to Waypoint`, grant microphone access, and hear the greeting;
-6. verify the UI moves through listening/thinking/speaking, the orb follows agent audio, and transcript finals are not duplicated;
-7. say “What is the status of APP004?” and verify the ID-only context signal switches the card to the FastAPI-backed `APP004` record;
-8. ask which documents are missing and verify the established application context is retained;
-9. request a new date for `APP001` at least 30 days in the future, speaking the full month, day, and year;
-10. verify the agent prepares and reads back the date but FastAPI still returns the old date;
-11. say “That's great” and verify the date still does not change;
-12. say “Yeah, please change it” and verify exactly one PATCH succeeds, one update hint causes a refetch, and the card shows the FastAPI-confirmed date;
-13. prepare a second date/correction and verify it is not applied in the same tool loop before a later “Yes”;
-14. prepare once more, say “Yes, but wait,” and verify no PATCH occurs;
-15. end the call and confirm the microphone indicator, audio, analyser/orb, and connected state all stop;
-16. start and end a second call to detect leaked tracks/listeners;
-17. repeat the essential controls at a narrow width, with keyboard navigation, and with reduced motion enabled;
-18. inspect the newest ignored session report and confirm prepare precedes confirmation, apply follows the later confirmation, and shutdown has no error.
-
-### Focused human-handoff regression smoke
-
-Run this exact sequence in a fresh call after changes to handoff policy:
-
-1. say “What is the status of APP004?” to establish the application context;
-2. say “Could you change the travel date to…” and verify the agent asks for the missing date while FastAPI receives no handoff POST;
-3. say “I'm confused” and verify there is still no handoff POST;
-4. say “December fifteenth, twenty twenty-seven” and verify the agent prepares the date and asks for confirmation without creating a handoff;
-5. say “I want to know what a support agent does” and verify no handoff POST occurs;
-6. say “This is not working; connect me to a human about APP004” and verify exactly one `POST /applications/APP004/handoffs` succeeds with `reason_code=user_request`.
-
-The first five turns must remain side-effect free with respect to handoff state,
-even if the LLM incorrectly attempts to select the handoff tool. The final
-request contains unrelated negation (“not working”) but still explicitly asks
-for a human, so it must create exactly one request.
+For the public product overview and architecture, see the root
+[README](../README.md), [engineering case study](../project.md), and
+[architecture document](./ARCHITECTURE.md).

@@ -209,5 +209,6 @@ prepare-first guidance, without retries or weaker assertions.
   provider-backed conversation evals, and session-level latency/usage reports
   used to diagnose failures from real calls.
 
-See [the demo guide](./docs/DEMO_GUIDE.md) for the final recording story and
-[the README](./README.md) for setup and repository navigation.
+See [the README](./README.md) for setup and repository navigation, and
+[the architecture document](./docs/ARCHITECTURE.md) for the detailed system
+boundaries.

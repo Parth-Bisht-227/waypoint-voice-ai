@@ -315,7 +315,7 @@ The FAQ retriever loads `knowledge/faqs.json` once per agent process and applies
 
 Session observers log available per-turn latency metrics and cumulative model usage. At session end, the agent writes a timestamped, sanitized JSON report under `observability/reports/`. That directory is ignored by Git. The browser transcript itself is not persisted by the React app, but the server-side session report may contain conversation information; production retention and access rules are therefore still required.
 
-## 10. Architecture assessment for V1
+## 10. V1 assessment and boundaries
 
 ### What works well
 
@@ -328,15 +328,18 @@ Session observers log available per-turn latency metrics and cumulative model us
 - Decorative animation is isolated and motion-aware.
 - Focused tests cover the most important trust boundaries.
 
-### Improvements to make next
+Waypoint's V1 architecture gives each layer a clear responsibility:
 
-1. Capture one clean, repeatable portfolio demo and retain its test output and session report as private supporting evidence.
-2. Add a small automated browser end-to-end layer when the project needs repeatable transport/UI regression coverage.
-3. Complete narrow viewport, keyboard-only, reduced-motion, and autoplay-recovery checks.
-4. Investigate intermittent custom-UI streamed-audio gaps only if they recur under a controlled LiveKit-UI comparison.
-5. Code-split the frontend's LiveKit path if measured startup or bundle cost becomes important.
-6. Replace fixed 2026 demo seed dates before they become past dates; deterministic backend tests already derive mutation dates from the current date.
-7. Split backend routes/services and centralize repeated agent HTTP handling only when future scope creates meaningful duplication.
-8. If the project is exposed publicly, add authentication, application-level authorization, TLS, origin controls, rate limits, secret management, and session-report retention/redaction controls first.
+- FastAPI and SQLite own business truth and durable mutations.
+- The agent handles conversation and tool selection but cannot authorize unsafe
+  mutations by itself.
+- The browser presents realtime state while refetching authoritative data from
+  FastAPI.
+- Observability records enough evidence to diagnose ordering, latency, usage,
+  and shutdown behavior.
+- Decorative UI animation remains isolated from business progress.
 
-The current architecture is appropriate for a local portfolio V1. The P0 integration path and its key safety boundaries are implemented and manually exercised. The immediate work is evidence, presentation, and a small residual UI QA pass; production controls become mandatory only if the service is made publicly reachable or handles non-synthetic data.
+The project intentionally remains a local synthetic-data prototype. Future work
+may include stronger browser automation, additional accessibility QA, more
+natural identifier pronunciation, response-length tuning, bundle optimization,
+and production security controls if public deployment is ever required.
