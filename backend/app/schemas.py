@@ -41,3 +41,10 @@ class HandoffResponse(BaseModel):
     application_id: str
     reason_code: HandoffReason
     status: HandoffStatus
+
+
+class VoiceTokenResponse(BaseModel):
+    server_url: str
+    participant_token: str
+    room_name: str
+    participant_identity: str

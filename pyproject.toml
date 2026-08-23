@@ -11,5 +11,6 @@ dependencies = [
     "pytest-asyncio",
     "httpx2",
     "python-dotenv",
+    "livekit-api==1.2.0",
     "livekit-agents[deepgram,groq,cartesia,silero,turn-detector]==1.7.0",
 ]
