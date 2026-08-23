@@ -12,6 +12,7 @@ from .schemas import (
     HandoffRequest,
     HandoffResponse,
 )
+from .voice_tokens import router as voice_router
 import json
 from datetime import date, datetime, timezone
 
@@ -27,6 +28,8 @@ app = FastAPI(
     title = "Waypoint Voice Lab API",
     lifespan=lifespan
     )
+
+app.include_router(voice_router)
 
 
 #  this means that when FastAPI starts -> run init_db() -> make sure tables + seed data exists
