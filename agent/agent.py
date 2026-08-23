@@ -3,6 +3,7 @@ from uuid import uuid4
 from typing import Literal
 from datetime import date
 from pathlib import Path
+from textwrap import dedent
 from dotenv import load_dotenv
 from livekit import agents
 from livekit.agents import (
@@ -17,6 +18,11 @@ from livekit.agents import (
     utils,
 )
 from agent.retriever import search_faqs
+from agent.application_signals import (
+    ApplicationSignalSender,
+    make_application_signal_sender,
+    publish_application_signal,
+)
 from observability.session_observer import (
     attach_session_observers,
     save_session_report,
@@ -86,41 +92,191 @@ class WaypointSessionState:
     pending_travel_date: str | None = None
     pending_idempotency_key: str | None = None
     pending_confirmation_granted: bool = False
+    latest_final_user_text: str | None = None
+    application_signal_sender: ApplicationSignalSender | None = None
 
     # the state exists only during the call
 
 
-_EXPLICIT_CONFIRMATIONS = {
-    "yes",
-    "yes please",
-    "confirm",
-    "confirmed",
-    "i confirm",
-    "i confirm it",
-    "confirm it",
+_CONFIRMATION_VETO_PATTERN = re.compile(
+    r"\b(?:no|nope|not|wait|stop|actually|instead|but|wrong)\b"
+    r"|\bcancel(?:led)?\b"
+    r"|\bhold (?:on|up)\b"
+    r"|\bnever ?mind\b"
+    r"|\bforget it\b"
+)
+_DATE_LIKE_PATTERN = re.compile(
+    r"\d"
+    r"|\b(?:"
+    r"january|february|march|april|may|june|july|august|"
+    r"september|october|november|december|"
+    r"today|tomorrow|yesterday"
+    r")\b"
+)
+_CONFIRMATION_WORDS = frozenset(
+    {
+        "yes",
+        "yeah",
+        "yep",
+        "please",
+        "confirm",
+        "confirmed",
+        "i",
+        "it",
+        "this",
+        "that",
+        "is",
+        "the",
+        "date",
+        "change",
+        "apply",
+        "go",
+        "ahead",
+        "and",
+        "correct",
+        "right",
+        "sound",
+        "sounds",
+        "good",
+        "do",
+        "proceed",
+        "now",
+    }
+)
+_CONFIRMATION_MARKERS = frozenset(
+    {"yes", "yeah", "yep", "confirm", "confirmed", "correct"}
+)
+_CONFIRMATION_ACTIONS = (
+    "change it",
     "apply it",
-    "please apply it",
     "go ahead",
-    "go ahead and apply it",
-    "yes apply it",
-    "yes change it",
-    "that is correct",
-    "that's correct",
-    "yes that is correct",
-    "yes that's correct",
-}
+    "do it",
+    "i confirm",
+    "confirm it",
+    "proceed",
+)
 
 
 def is_explicit_confirmation(text: str | None) -> bool:
-    """Return whether a complete user utterance explicitly confirms a change."""
+    """Classify a short, complete confirmation with deterministic safeguards."""
 
     if not text:
         return False
 
     normalized = text.casefold().replace("’", "'")
-    normalized = re.sub(r"[^a-z0-9']+", " ", normalized)
+    normalized = re.sub(r"\bdon'?t\b", "do not", normalized)
+    normalized = re.sub(r"\bthat'?s\b", "that is", normalized)
+    normalized = re.sub(r"\bit'?s\b", "it is", normalized)
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
     normalized = " ".join(normalized.split())
-    return normalized in _EXPLICIT_CONFIRMATIONS
+
+    if (
+        not normalized
+        or "?" in text
+        or _CONFIRMATION_VETO_PATTERN.search(normalized)
+        or _DATE_LIKE_PATTERN.search(normalized)
+    ):
+        return False
+
+    words = normalized.split()
+    if len(words) > 12 or not set(words).issubset(_CONFIRMATION_WORDS):
+        return False
+
+    return bool(
+        _CONFIRMATION_MARKERS.intersection(words)
+        or any(action in normalized for action in _CONFIRMATION_ACTIONS)
+    )
+
+
+_HANDOFF_TARGET = (
+    r"(?:human|person|representative|live agent|support agent|"
+    r"customer service|agent)"
+)
+_NEGATED_HANDOFF_PATTERN = re.compile(
+    r"\b(?:do not|never) "
+    r"(?:want|need|speak|talk|connect|transfer|get|put|hand off|handoff)\b"
+    r"|\bcannot (?:speak|talk|connect|transfer|get|reach)\b"
+    r"|\b(?:want|need|would like) to not "
+    r"(?:speak|talk|connect|transfer|get|be transferred)\b"
+    rf"|\bnot (?:asking|requesting) (?:for )?(?:a |an |the )?"
+    rf"{_HANDOFF_TARGET}\b"
+    rf"|\b(?:no|not) (?:a |an |the )?{_HANDOFF_TARGET}\b"
+)
+_DEFERRED_HANDOFF_PATTERN = re.compile(
+    r"\b(?:maybe later|not yet|not now)\b"
+)
+_HANDOFF_INFORMATION_PATTERN = re.compile(
+    r"^(?:what|who|why|how)\b"
+    r"|^(?:do|should|would) i\b"
+    r"|^do you have\b"
+    r"|^(?:can|could|would) you (?:tell|explain)\b"
+    r"|\bi (?:want|need|would like) to "
+    r"(?:know|understand|learn|ask|find out)\b"
+)
+_HANDOFF_TARGET_PATTERN = re.compile(
+    rf"\b{_HANDOFF_TARGET}\b"
+)
+_HANDOFF_INTENT_PATTERN = re.compile(
+    r"\b(?:speak|talk) (?:to|with)\b"
+    r"|\b(?:connect|transfer|get|put) me\b"
+    r"|\bhand (?:me )?off\b|\bhandoff me\b"
+)
+_DIRECT_HANDOFF_DESIRE_PATTERN = re.compile(
+    rf"\bi (?:want|need|would like) "
+    rf"(?:to (?:speak|talk) (?:to|with) )?"
+    rf"(?:a |an |the )?{_HANDOFF_TARGET}\b"
+)
+_DIRECT_HANDOFF_REQUESTS = frozenset(
+    {
+        "human",
+        "human please",
+        "person please",
+        "representative please",
+        "agent please",
+        "live agent",
+        "live agent please",
+        "support agent please",
+        "customer service please",
+        "human support please",
+        "to a human",
+        "to a person",
+        "to a representative",
+        "to an agent",
+    }
+)
+
+
+def is_explicit_handoff_request(text: str | None) -> bool:
+    """Return whether a finalized user turn explicitly requests a person."""
+
+    if not text:
+        return False
+
+    normalized = text.casefold().replace("’", "'")
+    normalized = re.sub(r"\bdon'?t\b", "do not", normalized)
+    normalized = re.sub(r"\bcan'?t\b", "cannot", normalized)
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    normalized = " ".join(normalized.split())
+
+    if (
+        not normalized
+        or len(normalized.split()) > 30
+        or _NEGATED_HANDOFF_PATTERN.search(normalized)
+        or _DEFERRED_HANDOFF_PATTERN.search(normalized)
+        or _HANDOFF_INFORMATION_PATTERN.search(normalized)
+    ):
+        return False
+
+    if normalized in _DIRECT_HANDOFF_REQUESTS:
+        return True
+
+    if _DIRECT_HANDOFF_DESIRE_PATTERN.search(normalized):
+        return True
+
+    return bool(
+        _HANDOFF_TARGET_PATTERN.search(normalized)
+        and _HANDOFF_INTENT_PATTERN.search(normalized)
+    )
 
 
 def attach_confirmation_tracking(
@@ -134,6 +290,7 @@ def attach_confirmation_tracking(
             return
 
         state = session.userdata
+        state.latest_final_user_text = item.text_content
         if state.pending_application_id is None:
             state.pending_confirmation_granted = False
             return
@@ -148,95 +305,79 @@ def attach_confirmation_tracking(
 class WayPointAssistant(Agent):
     def __init__(self) -> None:
         super().__init__(
-            instructions=
-            
-            f"""
+            instructions=dedent(
+                f"""
                 You are Waypoint, a helpful travel-support voice assistant.
 
-                Keep responses short, natural, and conversational. Most spoken responses should be one or two sentences.
-                Use plain punctuation in spoken responses. Do not use emojis or Markdown formatting.
+                ## Identity and voice style
+                - Speak naturally and briefly. Default to one short sentence;
+                  use at most two only when necessary.
+                - Do not repeat information, explain internal tools, or narrate
+                  policy and workflow. Use plain speech, without Markdown or emojis.
+                - Use the canonical application_id returned by the latest tool.
+                  Speak APP004 as "A P P zero zero four." Never echo a malformed ID.
 
-                ## Grounding and tools
-
-                For application-specific information, always use the available tools.
-
-                Never invent or assume:
-
-                * application status;
-                * travel dates;
-                * missing documents;
-                * successful updates;
-                * handoff state;
-                * policies or actions not supported by a tool or grounded knowledge.
-
-                Only state facts returned by tools or grounded knowledge.
-                
-                Do not use emojis or Markdown formatting in spoken responses.
-                Do not infer that a missing document will automatically resolve a blocked application.
-                Do not offer uploads, reviews, itinerary printing, bookings, cancellations, or other actions unless an available tool explicitly supports them.
-
-                When application information is requested, use the relevant tool rather than relying on conversation memory.
-                If an application cannot be found or an ID is unclear, ask the user to repeat or clarify it.
+                ## Grounding and application tools
+                - Use the relevant application tool for every current application
+                  fact or action; do not rely on remembered status or dates.
+                - Never invent application facts, missing documents, successful
+                  updates, handoff state, policies, or unsupported actions.
+                - Do not imply a missing document automatically caused a blocked
+                  status. Do not offer uploads, bookings, cancellations, or reviews.
+                - If an ID is unclear or a tool fails, ask or explain briefly and
+                  never claim success.
 
                 ## Travel-date changes
                 Today's date is {date.today().isoformat()}.
-                                For travel-date changes, never invent or guess the year.
-                                If the user gives a month and day without a clear year,
-                                ask which year they mean before preparing the change.
+                - Require an application ID and a complete future date with a year.
+                  Ask only for information that is missing; never guess the year.
+                - A month, day, and four-digit year is a complete date. When all
+                  three are present, do not ask the user to repeat the year.
+                - Preparation is non-mutating validation and needs no consent.
+                  Once the ID and complete date are known, the next action must be
+                  prepare_travel_date_change. Do not speak or ask for confirmation
+                  before calling it.
+                - After it returns confirmation_required, ask exactly one short
+                  confirmation using its canonical application_id and proposed_date.
+                  Phrase it as a proposed action, for example, "Change A P P
+                  zero zero four to December fifteenth, twenty twenty-seven?"
+                  Do not say the date "is set" or otherwise imply it changed.
+                - On a later clear confirmation such as "yes", "yeah", "confirmed",
+                  "please change it", or "go ahead", call
+                  apply_pending_travel_date_change immediately. Do not ask again or
+                  require the ID or date to be repeated.
+                - A correction requires prepare_travel_date_change again, followed
+                  by one new confirmation. Vague remarks such as "okay" or
+                  "that's great" do not authorize a change.
+                - Claim success only from a successful apply result.
 
-                When the user asks to change a travel date:
+                ## Human handoff
+                - Call handoff_to_human only when the user's latest completed
+                  turn explicitly asks to speak to a human; use reason_code
+                  "user_request".
+                - Never create a handoff because an ID or date is missing, the
+                  user corrects themselves, seems confused, or clarification is
+                  needed. Ask one brief clarifying question instead.
+                - For unsupported requests or failures, explain briefly. You may
+                  tell the user they can explicitly ask for a human, but do not
+                  create a handoff unless they do so.
+                - Do not claim a handoff until the tool succeeds.
+                - After success, say only that a human-support request was created.
+                  Do not promise a notification, response time, or contact outcome.
 
-                1. Collect the application ID and requested date.
-                2. Call `prepare_travel_date_change`.
-                3. Tell the user the exact application and proposed date and ask for explicit confirmation.
-                4. Do not claim that anything has changed yet.
-                5. If the user corrects the date before confirmation, call `prepare_travel_date_change` again with the corrected date.
-                6. Call `apply_pending_travel_date_change` only after a clear confirmation such as:
-
-                * "yes"
-                * "confirm"
-                * "apply it"
-                * "go ahead"
-                * "yes, change it"
-                7. Do not treat vague or incomplete statements such as "okay", "that's great", partial speech, or unrelated statements as confirmation.
-                8. Never say the date was updated until `apply_pending_travel_date_change` returns a successful backend result.
-
-                If a tool fails or times out, explain the failure briefly and do not pretend the requested action succeeded.
-
-                Human Handoff:
-
-                - If the user explicitly asks to speak to a human, use handoff_to_human
-                with reason_code "user_request".
-
-                - Use human handoff when the request cannot be safely resolved because of:
-                unsupported functionality,
-                repeated failed clarification,
-                critical backend failure,
-                conflicting state,
-                or persistent uncertainty about a critical identifier.
-
-                - Do not hand off merely because a question is difficult.
-
-                - Do not claim that human support has been requested until
-                handoff_to_human returns successfully.
-
-                - Keep the spoken acknowledgement short after a successful handoff.
-                
-                KNOWLEDGE QUESTIONS
-                - For general Waypoint support, policy, capability, or explanatory questions,
-                use search_support_knowledge before answering.
-                - Answer only from the retrieved knowledge.
-                - If no relevant knowledge is found, say you do not have grounded information
-                for that question; do not invent an answer.
-                - Use application tools, not the knowledge tool, for current application state
-                such as status, travel date, or missing documents.
-            """
+                ## Knowledge questions
+                - For general Waypoint policy, capability, or explanation, call
+                  search_support_knowledge and answer only from its results.
+                - If nothing relevant is found, say grounded information is
+                  unavailable. Use application tools for current application state.
+                """
+            ).strip()
         )
 
     @function_tool()
     async def get_application_status(
         self, 
-        context: RunContext,
+        context: RunContext[WaypointSessionState],
         application_id: str,
     ) -> dict:
         """
@@ -284,18 +425,25 @@ class WayPointAssistant(Agent):
 
             data = await response.json()
 
-            return {
+            result = {
                 "application_id": data["application_id"],
                 "destination": data["destination"],
                 "status": data["status"],
                 "travel_date": data["travel_date"],
             }
 
+        await publish_application_signal(
+            context.userdata.application_signal_sender,
+            "application_context",
+            canonical_id,
+        )
+        return result
+
 
     @function_tool()
     async def get_missing_documents(
         self,
-        context: RunContext,
+        context: RunContext[WaypointSessionState],
         application_id: str,
     ) -> dict:
         """
@@ -333,10 +481,17 @@ class WayPointAssistant(Agent):
 
             data = await response.json()
 
-            return{
+            result = {
                 "application_id": data["application_id"],
                 "missing_documents": data["missing_documents"],
             }
+
+        await publish_application_signal(
+            context.userdata.application_signal_sender,
+            "application_context",
+            canonical_id,
+        )
+        return result
 
     @function_tool()
     async def prepare_travel_date_change(
@@ -346,10 +501,13 @@ class WayPointAssistant(Agent):
         new_date: str,
     ) -> dict:
         """
-        Prepare a travel-date change without modifying the application.
+        Mandatory non-mutating validation for a requested travel-date change.
 
-        Use this when the user asks to change their travel date.
-        If the user corrects the date, call this again with the corrected date.
+        Calling this tool does not update the backend and needs no user consent.
+        Once the application ID and complete requested date are known, call it
+        as the next action without speaking first. A month, day, and four-digit
+        year is complete and must not be requested again. If the user corrects
+        the date, call this tool again with the corrected date.
 
         Args:
             application_id: Application identifier.
@@ -403,7 +561,7 @@ class WayPointAssistant(Agent):
         state.pending_idempotency_key = f"date-{uuid4().hex}"
         state.pending_confirmation_granted = False
 
-        return {
+        result = {
             "status": "confirmation_required",
             "application_id": canonical_id,
             "current_date": application["travel_date"],
@@ -414,6 +572,13 @@ class WayPointAssistant(Agent):
             ),
         }
 
+        await publish_application_signal(
+            state.application_signal_sender,
+            "application_context",
+            canonical_id,
+        )
+        return result
+
 
     @function_tool()
     async def apply_pending_travel_date_change(
@@ -421,10 +586,11 @@ class WayPointAssistant(Agent):
         context: RunContext[WaypointSessionState],
     ) -> dict:
         """
-            Apply the currently pending travel-date change.
+        Apply the currently pending travel-date change.
 
-            Call this only after the user explicitly confirms the exact
-            application and travel date previously proposed.
+        Call this immediately after a later user turn clearly confirms the
+        prepared proposal. Do not ask the user to restate the ID or date.
+        The deterministic Python gate refuses an unconfirmed application.
         """
 
         state = context.userdata
@@ -505,6 +671,12 @@ class WayPointAssistant(Agent):
         state.pending_idempotency_key = None
         state.pending_confirmation_granted = False
 
+        await publish_application_signal(
+            state.application_signal_sender,
+            "application_updated",
+            application_id,
+        )
+
         return result
 
 
@@ -513,31 +685,34 @@ class WayPointAssistant(Agent):
         self,
         context: RunContext[WaypointSessionState],
         application_id: str,
-        reason_code: Literal[
-            "user_request",
-            "unsupported_request",
-            "repeated_clarification_failure",
-            "backend_failure",
-            "state_conflict",
-            "critical_entity_uncertain",
-        ]
+        reason_code: Literal["user_request"],
     ) -> dict:
         """
         Request human support for an application.
 
-        Use this when:
-        - the user explicitly asks for a human;
-        - the request is unsupported and needs human assistance;
-        - repeated clarification attempts have failed;
-        - a critical backend failure prevents safe resolution;
-        - application state is conflicting;
-        - an important spoken entity cannot be understood reliably.
+        Call this only when the user's latest completed turn explicitly asks
+        to speak to a human. Missing information, corrections, confusion,
+        unsupported requests, and clarification attempts must not create a
+        handoff automatically.
 
         Args:
             application_id: Application identifier.
-            reason_code: Deterministic reason for the handoff.
+            reason_code: Use user_request for an explicit user request.
         
         """
+
+        state = context.userdata
+        if not is_explicit_handoff_request(state.latest_final_user_text):
+            raise ToolError(
+                "The user has not explicitly requested a human. Continue "
+                "helping and ask only for any missing application or date "
+                "details."
+            )
+
+        if reason_code != "user_request":
+            raise ToolError(
+                "An explicit human request must use reason_code user_request."
+            )
 
         canonical_id = normalize_application_id(application_id)
 
@@ -649,9 +824,12 @@ server = AgentServer()
 async def waypoint_agent(ctx: agents.JobContext):
 
     # this represents one realtime conversation
+    session_state = WaypointSessionState(
+        application_signal_sender=make_application_signal_sender(ctx),
+    )
     session = AgentSession[WaypointSessionState](
 
-        userdata = WaypointSessionState(), # lk exposes this session userdata through RunContext, specifically for temporary
+        userdata = session_state, # lk exposes this session userdata through RunContext, specifically for temporary
         # workflow/session state like this
         # this means that this conversation's "userdata" has the shape of "WaypointSessionState"
 
@@ -680,6 +858,7 @@ async def waypoint_agent(ctx: agents.JobContext):
                 "min_delay": 0.6,
                 "max_delay": 2.5,
             },
+            preemptive_generation={"enabled": False},
         ),
     )
 

@@ -1,6 +1,7 @@
 import json
 import re
 from collections.abc import Callable
+from datetime import date, timedelta
 
 import pytest
 
@@ -54,12 +55,25 @@ def assistant_text(result) -> str:
     return "\n".join(messages)
 
 
+def result_diagnostics(result) -> dict[str, object]:
+    """Return useful context when a generative routing assertion fails."""
+    return {
+        "function_calls": function_calls(result),
+        "assistant_text": assistant_text(result),
+    }
+
+
+def future_date(days: int) -> str:
+    """Return an ISO date that remains valid as the eval suite ages."""
+    return (date.today() + timedelta(days=days)).isoformat()
+
+
 def mock_get_application_status(_context, application_id: str) -> dict:
     return {
         "application_id": application_id,
         "destination": "Copenhagen",
         "status": "processing",
-        "travel_date": "2026-10-20",
+        "travel_date": future_date(30),
     }
 
 
@@ -83,7 +97,7 @@ def mock_prepare_travel_date_change(
     return {
         "status": "confirmation_required",
         "application_id": application_id,
-        "current_date": "2026-10-20",
+        "current_date": future_date(30),
         "proposed_date": new_date,
         "message": "Ask for explicit confirmation before applying.",
     }
@@ -92,8 +106,8 @@ def mock_prepare_travel_date_change(
 def mock_apply_pending_travel_date_change(_context) -> dict:
     return {
         "application_id": "APP001",
-        "old_date": "2026-10-20",
-        "new_date": "2026-11-20",
+        "old_date": future_date(30),
+        "new_date": future_date(90),
         "changed": True,
     }
 
@@ -188,7 +202,14 @@ async def run_single_turn(
 
 
 @pytest.mark.asyncio
-async def test_travel_date_requires_explicit_confirmation():
+async def test_travel_date_prepares_before_natural_confirmation():
+    requested_date = date.today() + timedelta(days=90)
+    spoken_date = (
+        f"{requested_date:%B} "
+        f"{requested_date.day}, {requested_date.year}"
+    )
+    expected_date = requested_date.isoformat()
+
     async with AgentSession[WaypointSessionState](
         llm=groq_llm(),
         userdata=WaypointSessionState(),
@@ -202,36 +223,38 @@ async def test_travel_date_requires_explicit_confirmation():
 
             # Turn 1: prepare, but do not mutate.
             result1 = await session.run(
-                user_input="Change APP001 to November 20, 2026."
+                user_input=f"Change APP001 to {spoken_date}."
             )
 
             names1 = function_names(result1)
+            diagnostics1 = result_diagnostics(result1)
 
-            assert "prepare_travel_date_change" in names1, names1
-            assert "apply_pending_travel_date_change" not in names1, names1
+            assert "prepare_travel_date_change" in names1, diagnostics1
+            assert (
+                "apply_pending_travel_date_change" not in names1
+            ), diagnostics1
 
             prepare_calls = function_arguments(
                 result1,
                 "prepare_travel_date_change",
             )
 
-            assert prepare_calls, function_calls(result1)
-            assert prepare_calls[0]["application_id"] == "APP001", prepare_calls
-            assert prepare_calls[0]["new_date"] == "2026-11-20", prepare_calls
+            assert prepare_calls, diagnostics1
+            assert (
+                prepare_calls[0]["application_id"] == "APP001"
+            ), diagnostics1
+            assert prepare_calls[0]["new_date"] == expected_date, diagnostics1
 
-            # Turn 2: positive wording, but not explicit authorization.
-            result2 = await session.run(user_input="That's great.")
+            # Turn 2: a later natural, action-bearing confirmation may apply.
+            result2 = await session.run(
+                user_input="Yeah, please change it."
+            )
 
             names2 = function_names(result2)
+            diagnostics2 = result_diagnostics(result2)
 
-            assert "apply_pending_travel_date_change" not in names2, names2
-
-            # Turn 3: explicit authorization.
-            result3 = await session.run(user_input="Yes, apply it.")
-
-            names3 = function_names(result3)
-
-            assert "apply_pending_travel_date_change" in names3, names3
+            assert "apply_pending_travel_date_change" in names2, diagnostics2
+            assert "prepare_travel_date_change" not in names2, diagnostics2
 
 
 @pytest.mark.asyncio
@@ -283,6 +306,29 @@ async def test_confusion_does_not_trigger_accidental_handoff():
     status_calls = function_arguments(result, "get_application_status")
     assert status_calls, function_calls(result)
     assert status_calls[0]["application_id"] == "APP004", status_calls
+
+
+@pytest.mark.asyncio
+async def test_incomplete_date_request_asks_for_detail_without_handoff():
+    result = await run_single_turn("Could you change the travel date to")
+    names = function_names(result)
+
+    assert "handoff_to_human" not in names, names
+    assert "prepare_travel_date_change" not in names, names
+    assert "apply_pending_travel_date_change" not in names, names
+
+    response = assistant_text(result).lower()
+    assert response, response
+    assert any(
+        marker in response
+        for marker in (
+            "what date",
+            "which date",
+            "new date",
+            "travel date",
+            "date would",
+        )
+    ), response
 
 
 def mock_unsupported_knowledge(_context, query: str) -> dict:

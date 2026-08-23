@@ -43,12 +43,24 @@
     "forbidden_tools": ["handoff_to_human"],
     "should_mutate_state": false
   },
+  {
+    "id": "handoff_003",
+    "category": "handoff",
+    "user_input": "Could you change the travel date to",
+    "expected_tools": [],
+    "forbidden_tools": [
+      "handoff_to_human",
+      "prepare_travel_date_change",
+      "apply_pending_travel_date_change"
+    ],
+    "should_mutate_state": false
+  },
     {
     "id": "date_confirmation_001",
     "category": "multi_turn_mutation",
     "turns": [
         {
-        "user_input": "Change APP001 to November 20, 2026.",
+        "user_input": "Change APP001 to November 20, 2099.",
         "expected_tools": [
             "prepare_travel_date_change"
         ],
