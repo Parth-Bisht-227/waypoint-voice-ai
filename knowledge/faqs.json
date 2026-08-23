@@ -73,7 +73,7 @@
     "id": "faq_011",
     "category": "human_support",
     "question": "When should the assistant request human support?",
-    "answer": "Human support is appropriate when the user explicitly asks for it or when the request cannot be safely resolved because of unsupported functionality, repeated clarification failure, backend failure, conflicting state, or persistent uncertainty about a critical identifier.",
+    "answer": "In the current Waypoint voice workflow, a human-support request is created only after the user explicitly asks for a human. If a request is unsupported or cannot be completed safely, the assistant may explain that and tell the user that human support is available, but it does not create the request automatically.",
     "keywords": ["human support", "handoff", "escalation", "failure"]
   },
   {

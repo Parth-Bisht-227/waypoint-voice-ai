@@ -20,12 +20,29 @@ from agent.agent import (
     [
         "yes",
         "Yes.",
+        "yeah",
+        "yep",
+        "yes confirmed",
+        "Yes. Confirmed.",
         "I confirm",
+        "confirmed",
         "confirm it",
+        "yes please",
+        "yeah please",
+        "yes, that's correct",
+        "please change it",
+        "change it",
+        "apply it",
         "please apply it",
         "yes, apply it",
+        "go ahead",
+        "go ahead and change it",
         "go ahead and apply it",
         "yes, change it",
+        "that's correct",
+        "that is correct",
+        "sounds good, change it",
+        "Yeah. This is the date. Please change it.",
     ],
 )
 def test_explicit_confirmation_accepts_complete_confirmation_utterances(
@@ -44,9 +61,21 @@ def test_explicit_confirmation_accepts_complete_confirmation_utterances(
         "sure",
         "no",
         "wait",
+        "hold on",
+        "stop",
+        "cancel",
+        "not yet",
+        "don't change it",
+        "do not change it",
         "actually, use December 26 instead",
+        "use December 26 instead",
+        "instead, use December 26",
         "yes, but wait",
+        "yes but make it December 30",
+        "yeah actually make it December 30",
         "yes, change it to December 26",
+        "change it to 2026-12-30",
+        "December 30",
         "what is the status of APP001?",
     ],
 )
@@ -89,13 +118,13 @@ def test_confirmation_tracking_uses_only_finalized_user_messages() -> None:
     state.pending_travel_date = "2026-12-25"
     state.pending_idempotency_key = "date-test"
 
-    session.add_message("user", "Yes.")
+    session.add_message("user", "Yes. Confirmed.")
     assert state.pending_confirmation_granted
 
     session.add_message("assistant", "I will apply it.")
     assert state.pending_confirmation_granted
 
-    session.add_message("user", "Actually, use December 26 instead.")
+    session.add_message("user", "Wait.")
     assert not state.pending_confirmation_granted
 
 
@@ -207,8 +236,23 @@ async def test_apply_requires_later_explicit_confirmation_before_patch(
     assert context.disallow_interruptions_calls == 0
     assert state.pending_idempotency_key == pending_idempotency_key
 
-    # A later explicit bare "yes" authorizes exactly one backend mutation.
-    conversation.add_message("user", "Yes.")
+    # A natural confirmation grants authority, but a later veto revokes it.
+    conversation.add_message(
+        "user",
+        "Yeah. This is the date. Please change it.",
+    )
+    assert state.pending_confirmation_granted
+
+    conversation.add_message("user", "Wait.")
+    assert not state.pending_confirmation_granted
+    with pytest.raises(ToolError, match="confirm"):
+        await assistant.apply_pending_travel_date_change(context)
+    assert http_session.patch_calls == []
+    assert context.disallow_interruptions_calls == 0
+    assert state.pending_idempotency_key == pending_idempotency_key
+
+    # A subsequent natural confirmation authorizes exactly one mutation.
+    conversation.add_message("user", "Yes. Confirmed.")
     result = await assistant.apply_pending_travel_date_change(context)
 
     assert result["application_id"] == "APP001"
