@@ -1,10 +1,12 @@
-import type { VoicePresence } from './SpeakingOrb';
+import type { VoiceTransportState, VoiceUiState } from '../voice';
 
-interface SessionControlsProps {
-  presence: VoicePresence;
-  connected: boolean;
-  onTalk: () => void;
+export interface SessionControlsProps {
+  state: VoiceUiState;
+  transportState: VoiceTransportState;
+  canPlaybackAudio: boolean;
+  onStart: () => void;
   onEnd: () => void;
+  onEnableAudio: () => void;
 }
 
 function MicrophoneIcon() {
@@ -24,41 +26,84 @@ function EndCallIcon() {
   );
 }
 
-export function SessionControls({
-  presence,
-  connected,
-  onTalk,
-  onEnd,
-}: SessionControlsProps) {
-  const talkLabel =
-    presence === 'listening'
-      ? 'Listening…'
-      : connected
-        ? 'Talk to Waypoint'
-        : 'Start again';
-
+function SpeakerIcon() {
   return (
-    <div className="session-controls" role="group" aria-label="Voice session controls">
-      <button
-        className="session-control session-control--talk"
-        type="button"
-        onClick={onTalk}
-        aria-pressed={presence === 'listening'}
-      >
-        <MicrophoneIcon />
-        <span>{talkLabel}</span>
-      </button>
-
-      <button
-        className="session-control session-control--end"
-        type="button"
-        onClick={onEnd}
-        disabled={!connected}
-      >
-        <EndCallIcon />
-        <span>End call</span>
-      </button>
-    </div>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 9h4l5-4v14l-5-4H5zM17 9a4 4 0 0 1 0 6M19.5 6.5a7.5 7.5 0 0 1 0 11" />
+    </svg>
   );
 }
 
+function isActiveTransport(transportState: VoiceTransportState): boolean {
+  return (
+    transportState === 'requesting-microphone' ||
+    transportState === 'requesting-token' ||
+    transportState === 'connecting' ||
+    transportState === 'connected' ||
+    transportState === 'reconnecting' ||
+    transportState === 'disconnecting'
+  );
+}
+
+export function SessionControls({
+  state,
+  transportState,
+  canPlaybackAudio,
+  onStart,
+  onEnd,
+  onEnableAudio,
+}: SessionControlsProps) {
+  const active = isActiveTransport(transportState);
+  const canStart =
+    !active &&
+    (state === 'idle' || state === 'error') &&
+    (transportState === 'disconnected' || transportState === 'error');
+  const ending = transportState === 'disconnecting';
+  const playbackBlocked =
+    !canPlaybackAudio &&
+    (transportState === 'connected' || transportState === 'reconnecting');
+
+  return (
+    <div
+      className="session-controls"
+      role="group"
+      aria-label="Voice session controls"
+    >
+      {canStart ? (
+        <button
+          className="session-control session-control--talk session-control--start"
+          type="button"
+          onClick={onStart}
+        >
+          <MicrophoneIcon />
+          <span>
+            {state === 'error' ? 'Try voice again' : 'Talk to Waypoint'}
+          </span>
+        </button>
+      ) : null}
+
+      {playbackBlocked ? (
+        <button
+          className="session-control session-control--audio"
+          type="button"
+          onClick={onEnableAudio}
+        >
+          <SpeakerIcon />
+          <span>Enable audio</span>
+        </button>
+      ) : null}
+
+      {active ? (
+        <button
+          className="session-control session-control--end"
+          type="button"
+          onClick={onEnd}
+          disabled={ending}
+        >
+          <EndCallIcon />
+          <span>{ending ? 'Ending…' : 'End call'}</span>
+        </button>
+      ) : null}
+    </div>
+  );
+}

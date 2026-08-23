@@ -1,46 +1,75 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { DEFAULT_APPLICATION_ID } from './api/config';
+import { requestVoiceToken } from './api/voiceToken';
 import { ApplicationCard } from './components/ApplicationCard';
 import { PixelJourneyCanvas } from './components/PixelJourneyCanvas';
-import type { VoicePresence } from './components/SpeakingOrb';
 import { VoiceDock } from './components/VoiceDock';
 import { WaypointHeader } from './components/WaypointHeader';
-import { mockApplicationAdapter } from './data/mockApplicationAdapter';
-import { mockTranscript } from './data/mockTranscript';
+import { useApplication } from './hooks/useApplication';
+import {
+  deriveVoiceUiState,
+  type ApplicationSignal,
+  type VoiceConnectionCredentials,
+  useVoiceSession,
+} from './voice';
 
-const application = mockApplicationAdapter.getSnapshot();
+async function getVoiceCredentials(
+  signal: AbortSignal,
+): Promise<VoiceConnectionCredentials> {
+  const response = await requestVoiceToken(signal);
 
-const utterances: Record<VoicePresence, { speaker: 'You' | 'Waypoint' | 'Session'; text: string }> = {
-  idle: {
-    speaker: 'Session',
-    text: 'The demo call has ended. Start again when you are ready.',
-  },
-  listening: {
-    speaker: 'You',
-    text: 'I want to check what is still missing from my application.',
-  },
-  speaking: {
-    speaker: 'Waypoint',
-    text: 'Your Solara application is waiting for one document: a bank statement.',
-  },
-};
-
-const amplitudes: Record<VoicePresence, number> = {
-  idle: 0.08,
-  listening: 0.38,
-  speaking: 0.72,
-};
+  return {
+    serverUrl: response.server_url,
+    participantToken: response.participant_token,
+    roomName: response.room_name,
+    participantIdentity: response.participant_identity,
+  };
+}
 
 export function WaypointScreen() {
-  const [presence, setPresence] = useState<VoicePresence>('speaking');
-  const connected = presence !== 'idle';
+  const [currentApplicationId, setCurrentApplicationId] = useState(
+    DEFAULT_APPLICATION_ID,
+  );
+  const {
+    state: applicationResource,
+    refetch: refetchApplication,
+  } = useApplication(currentApplicationId);
 
-  function handleTalk() {
-    setPresence((current) => (current === 'listening' ? 'speaking' : 'listening'));
-  }
+  const handleApplicationSignal = useCallback(
+    (signal: ApplicationSignal) => {
+      setCurrentApplicationId(signal.applicationId);
+      refetchApplication();
+    },
+    [refetchApplication],
+  );
 
-  function handleEnd() {
-    setPresence('idle');
-  }
+  const voice = useVoiceSession({
+    getToken: getVoiceCredentials,
+    onApplicationSignal: handleApplicationSignal,
+    onReconnected: refetchApplication,
+  });
+  const voiceState = deriveVoiceUiState(voice);
+
+  useEffect(() => {
+    function refreshVisibleApplication() {
+      if (document.visibilityState === 'visible') {
+        refetchApplication();
+      }
+    }
+
+    document.addEventListener('visibilitychange', refreshVisibleApplication);
+    return () => {
+      document.removeEventListener(
+        'visibilitychange',
+        refreshVisibleApplication,
+      );
+    };
+  }, [refetchApplication]);
+
+  const routeDestination =
+    applicationResource.status === 'ready'
+      ? applicationResource.application.destination
+      : currentApplicationId;
 
   return (
     <div className="waypoint-shell">
@@ -51,7 +80,7 @@ export function WaypointScreen() {
       <PixelJourneyCanvas />
       <div className="waypoint-shell__frame" aria-hidden="true" />
 
-      <WaypointHeader routeLabel={`Night route / ${application.destination}`} />
+      <WaypointHeader routeLabel={`Night route / ${routeDestination}`} />
 
       <main className="waypoint-stage">
         <section className="waypoint-hero" aria-labelledby="waypoint-title">
@@ -65,17 +94,22 @@ export function WaypointScreen() {
           </p>
         </section>
 
-        <ApplicationCard application={application} />
+        <ApplicationCard
+          resource={applicationResource}
+          onRetry={refetchApplication}
+        />
       </main>
 
       <VoiceDock
-        amplitude={amplitudes[presence]}
-        presence={presence}
-        connected={connected}
-        currentUtterance={utterances[presence]}
-        transcript={mockTranscript}
-        onTalk={handleTalk}
-        onEnd={handleEnd}
+        amplitude={voice.amplitude}
+        state={voiceState}
+        transportState={voice.transportState}
+        canPlaybackAudio={voice.canPlaybackAudio}
+        errorMessage={voice.error?.message}
+        transcript={voice.transcript}
+        onStart={() => void voice.start()}
+        onEnd={() => void voice.end()}
+        onEnableAudio={() => void voice.enableAudio()}
       />
     </div>
   );

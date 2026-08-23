@@ -1,31 +1,38 @@
 import type { CSSProperties } from 'react';
+import type { VoiceUiState } from '../voice';
 
-export type VoicePresence = 'idle' | 'listening' | 'speaking';
+export type VoicePresence = VoiceUiState;
 
-interface SpeakingOrbProps {
+export interface SpeakingOrbProps {
   amplitude: number;
-  state: VoicePresence;
+  state: VoiceUiState;
 }
 
-const presenceLabels: Record<VoicePresence, string> = {
+const presenceLabels: Record<VoiceUiState, string> = {
   idle: 'idle',
+  connecting: 'connecting',
   listening: 'listening',
+  thinking: 'thinking',
   speaking: 'speaking',
+  reconnecting: 'reconnecting',
+  error: 'unavailable',
 };
 
 export function SpeakingOrb({ amplitude, state }: SpeakingOrbProps) {
-  const normalizedAmplitude = Math.min(1, Math.max(0, amplitude));
+  const normalizedAmplitude = Number.isFinite(amplitude)
+    ? Math.min(1, Math.max(0, amplitude))
+    : 0;
   const style = {
     '--voice-amplitude': normalizedAmplitude,
   } as CSSProperties;
 
   return (
     <div
-      className="speaking-orb"
+      className={'speaking-orb speaking-orb--' + state}
       data-state={state}
       style={style}
       role="img"
-      aria-label={`Waypoint voice is ${presenceLabels[state]}`}
+      aria-label={'Waypoint voice is ' + presenceLabels[state]}
     >
       <span className="speaking-orb__orbit speaking-orb__orbit--outer" />
       <span className="speaking-orb__orbit speaking-orb__orbit--inner" />
@@ -36,4 +43,3 @@ export function SpeakingOrb({ amplitude, state }: SpeakingOrbProps) {
     </div>
   );
 }
-

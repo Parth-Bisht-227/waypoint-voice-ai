@@ -7,12 +7,14 @@
     "dev": "vite",
     "check": "tsc -b --pretty false",
     "build": "tsc -b --pretty false && vite build",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.2.7",
-    "@fontsource/ibm-plex-sans": "^5.2.6",
     "@fontsource/ibm-plex-mono": "^5.2.6",
+    "@fontsource/ibm-plex-sans": "^5.2.6",
+    "livekit-client": "2.22.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
@@ -21,7 +23,7 @@
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^6.1.0",
     "typescript": "^5.9.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "vitest": "4.1.11"
   }
 }
-

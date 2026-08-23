@@ -1,12 +1,13 @@
-import type { ApplicationSnapshot } from '../domain/application';
 import {
   applicationStatusLabels,
   formatDocumentCode,
   formatTravelDate,
 } from '../domain/application';
+import type { ApplicationResourceState } from '../hooks/useApplication';
 
-interface ApplicationCardProps {
-  application: ApplicationSnapshot;
+export interface ApplicationCardProps {
+  resource: ApplicationResourceState;
+  onRetry: () => void;
 }
 
 function CalendarIcon() {
@@ -26,55 +27,118 @@ function DocumentIcon() {
   );
 }
 
-export function ApplicationCard({ application }: ApplicationCardProps) {
-  const hasMissingDocuments = application.missingDocuments.length > 0;
-
+function RetryButton({ onRetry }: Pick<ApplicationCardProps, 'onRetry'>) {
   return (
-    <aside className="application-card" aria-labelledby="application-card-title">
-      <div className="application-card__topline">
-        <p id="application-card-title">Current application</p>
-        <span>Mock data</span>
-      </div>
-
-      <div className="application-card__identity">
-        <span className="application-card__id">{application.applicationId}</span>
-        <span
-          className={`status-chip status-chip--${application.status}`}
-        >
-          {applicationStatusLabels[application.status]}
-        </span>
-      </div>
-
-      <dl className="application-card__details">
-        <div className="application-card__destination">
-          <dt>Destination</dt>
-          <dd>
-            <span aria-hidden="true">↗</span>
-            {application.destination}
-          </dd>
-        </div>
-
-        <div>
-          <dt>
-            <CalendarIcon />
-            Travel date
-          </dt>
-          <dd>{formatTravelDate(application.travelDate)}</dd>
-        </div>
-
-        <div>
-          <dt>
-            <DocumentIcon />
-            Missing documents
-          </dt>
-          <dd>
-            {hasMissingDocuments
-              ? application.missingDocuments.map(formatDocumentCode).join(', ')
-              : 'None'}
-          </dd>
-        </div>
-      </dl>
-    </aside>
+    <button
+      className="application-card__retry"
+      type="button"
+      onClick={onRetry}
+    >
+      Try again
+    </button>
   );
 }
 
+export function ApplicationCard({
+  resource,
+  onRetry,
+}: ApplicationCardProps) {
+  const application = resource.status === 'ready' ? resource.application : null;
+  const stateClass = resource.status.replace('_', '-');
+
+  return (
+    <aside
+      className={'application-card application-card--' + stateClass}
+      aria-busy={resource.status === 'loading'}
+      aria-labelledby="application-card-title"
+      data-resource-state={resource.status}
+    >
+      <div className="application-card__topline">
+        <p id="application-card-title">Current application</p>
+        {application ? <span>Live record</span> : null}
+      </div>
+
+      {application ? (
+        <>
+          <div className="application-card__identity">
+            <span className="application-card__id">
+              {application.applicationId}
+            </span>
+            <span
+              className={'status-chip status-chip--' + application.status}
+            >
+              {applicationStatusLabels[application.status]}
+            </span>
+          </div>
+
+          <dl className="application-card__details">
+            <div className="application-card__destination">
+              <dt>Destination</dt>
+              <dd>
+                <span aria-hidden="true">↗</span>
+                {application.destination}
+              </dd>
+            </div>
+
+            <div>
+              <dt>
+                <CalendarIcon />
+                Travel date
+              </dt>
+              <dd>{formatTravelDate(application.travelDate)}</dd>
+            </div>
+
+            <div>
+              <dt>
+                <DocumentIcon />
+                Missing documents
+              </dt>
+              <dd>
+                {application.missingDocuments.length > 0
+                  ? application.missingDocuments
+                      .map(formatDocumentCode)
+                      .join(', ')
+                  : 'None'}
+              </dd>
+            </div>
+          </dl>
+        </>
+      ) : (
+        <div
+          className="application-card__resource-state"
+          role={resource.status === 'error' ? 'alert' : 'status'}
+        >
+          <div className="application-card__identity">
+            <span className="application-card__id">
+              {resource.applicationId}
+            </span>
+            <span className={'status-chip status-chip--' + stateClass}>
+              {resource.status === 'loading'
+                ? 'Loading'
+                : resource.status === 'not_found'
+                  ? 'Not found'
+                  : 'Unavailable'}
+            </span>
+          </div>
+
+          <div className="application-card__message">
+            <p>
+              {resource.status === 'loading'
+                ? 'Loading the application record…'
+                : resource.status === 'not_found'
+                  ? 'No application record was found for ' +
+                    resource.applicationId +
+                    '.'
+                  : resource.status === 'error'
+                    ? resource.message
+                    : ''}
+            </p>
+            {resource.status === 'not_found' || resource.status === 'error' ? (
+              <RetryButton onRetry={onRetry} />
+            ) : null}
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}

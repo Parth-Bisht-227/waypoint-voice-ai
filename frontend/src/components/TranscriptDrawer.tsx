@@ -1,10 +1,40 @@
-import type { TranscriptEntry } from '../data/mockTranscript';
+import type { VoiceTranscriptEntry } from '../voice';
 
-interface TranscriptDrawerProps {
-  entries: readonly TranscriptEntry[];
+export interface TranscriptDrawerProps {
+  entries: readonly VoiceTranscriptEntry[];
+}
+
+interface FormattedTranscriptTime {
+  label: string;
+  dateTime?: string;
+}
+
+const transcriptTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+function transcriptTime(timestamp: number): FormattedTranscriptTime {
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return { label: 'Time unavailable' };
+  }
+
+  return {
+    label: transcriptTimeFormatter.format(date),
+    dateTime: date.toISOString(),
+  };
 }
 
 export function TranscriptDrawer({ entries }: TranscriptDrawerProps) {
+  const turnLabel =
+    entries.length === 0
+      ? 'No turns'
+      : entries.length +
+        ' ' +
+        (entries.length === 1 ? 'turn' : 'turns');
+
   return (
     <details className="transcript-drawer">
       <summary>
@@ -12,34 +42,52 @@ export function TranscriptDrawer({ entries }: TranscriptDrawerProps) {
           ↑
         </span>
         <span>Transcript</span>
-        <span className="transcript-drawer__count">{entries.length} turns</span>
+        <span className="transcript-drawer__count">{turnLabel}</span>
       </summary>
 
       <div className="transcript-drawer__panel">
         <div className="transcript-drawer__heading">
           <div>
             <p>Call transcript</p>
-            <span>Mock conversation · not saved</span>
+            <span>Live session / not saved</span>
           </div>
-          <span aria-hidden="true">Live notes / 001</span>
+          <span aria-hidden="true">Live transcript</span>
         </div>
 
-        <ol className="transcript-list">
-          {entries.map((entry) => (
-            <li
-              className={`transcript-entry transcript-entry--${entry.speaker}`}
-              key={entry.id}
-            >
-              <div className="transcript-entry__meta">
-                <span>{entry.speaker === 'user' ? 'You' : 'Waypoint'}</span>
-                <time>{entry.timestamp}</time>
-              </div>
-              <p>{entry.text}</p>
-            </li>
-          ))}
-        </ol>
+        {entries.length === 0 ? (
+          <p className="transcript-drawer__empty" role="status">
+            No transcript yet. Utterances will appear here during the voice
+            session.
+          </p>
+        ) : (
+          <ol className="transcript-list" aria-label="Voice transcript">
+            {entries.map((entry) => {
+              const time = transcriptTime(entry.timestamp);
+
+              return (
+                <li
+                  className={
+                    'transcript-entry transcript-entry--' +
+                    entry.role +
+                    ' transcript-entry--' +
+                    (entry.final ? 'final' : 'interim')
+                  }
+                  key={entry.id}
+                >
+                  <div className="transcript-entry__meta">
+                    <span>{entry.role === 'user' ? 'You' : 'Waypoint'}</span>
+                    <span className="transcript-entry__state">
+                      {entry.final ? 'Final' : 'Interim'}
+                    </span>
+                    <time dateTime={time.dateTime}>{time.label}</time>
+                  </div>
+                  <p>{entry.text}</p>
+                </li>
+              );
+            })}
+          </ol>
+        )}
       </div>
     </details>
   );
 }
-
