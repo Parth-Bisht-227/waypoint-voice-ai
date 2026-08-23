@@ -6,7 +6,7 @@
 | --- | --- |
 | Audit date | 2026-08-23 |
 | Repository reference | This document describes the audited file state; use the latest Git commit or release tag for the exact revision |
-| Overall state | Local V1 is functionally complete and manually exercised; Git publication and portfolio packaging remain |
+| Overall state | Local V1 is functionally complete, manually exercised, and merged; public visibility and portfolio packaging remain |
 
 This file is the most time-sensitive document in the set. Update it after each integration slice.
 
@@ -20,7 +20,7 @@ The core architecture is implemented on both sides:
 
 FastAPI now exposes `POST /voice/token`, the token explicitly dispatches `waypoint-agent`, and the agent publishes the ID-only refresh messages expected by the frontend. Automated tests cover both trust boundaries. Human-operated calls through the custom browser UI and LiveKit's UI exercised microphone/STT, agent audio and state, transcript presentation, authoritative card refetches, a confirmed travel-date mutation, end-call cleanup, session restart, and report persistence.
 
-The first complete portfolio take has now been captured with both application-state updates and audio. The remaining work is release packaging: commit the staged V1 work, review the recording, upload the approved cut, reconcile its public link, and publish a reviewable repository release. The source repository may be public while development continues; that is separate from deploying the unauthenticated runtime. Production hardening is required only if this synthetic local demo is later exposed as a public service; neither a frontend redesign nor a backend rewrite is needed for the portfolio milestone.
+A raw full-flow validation recording now captures application-state updates and audio, and the V1 implementation PR has been merged into `main`. The author confirmed ownership of the generated UI inspiration asset, and the repository now uses the MIT License. The remaining work is portfolio packaging: write the article, create or edit the polished demo video, add its public link, and change repository visibility when ready. Public source is separate from deploying the unauthenticated runtime. Production hardening is required only if this synthetic local demo is later exposed as a public service.
 
 ## Capability matrix
 
@@ -229,8 +229,8 @@ One custom-UI run exhibited intermittent gaps during streamed audio, while a lat
 
 ### Security and privacy gaps
 
-- No repository license has been selected for public release.
-- The source-only `frontend/ui-inspo/waypoint-frontend-inspo` asset should be removed or have its ownership/provenance confirmed before publication.
+- The repository uses the MIT License, and the author has confirmed ownership
+  of the generated `frontend/ui-inspo/waypoint-frontend-inspo` asset.
 - No login, identity, or per-application authorization.
 - No rate limiting or abuse controls around the local unauthenticated token endpoint.
 - No production origin/CORS policy or reverse-proxy configuration.
