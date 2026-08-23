@@ -16,8 +16,6 @@ The local V1 workflow is functionally complete and has been exercised through
 the custom browser UI with a recorded, full voice session.
 
 [Engineering case study](./project.md) ·
-[Blog preparation notes](./docs/BLOG_OUTLINE.md) ·
-[Demo recording guide](./docs/DEMO_GUIDE.md) ·
 [Architecture](./docs/ARCHITECTURE.md) ·
 [Local setup](./docs/LOCAL_DEVELOPMENT.md)
 
@@ -37,11 +35,11 @@ the custom browser UI with a recorded, full voice session.
 - Records latency, usage, tools, conversation state, and clean shutdown details
   in ignored local session reports.
 
-The recommended 75–90 second portfolio flow is documented in
-[docs/DEMO_GUIDE.md](./docs/DEMO_GUIDE.md). A raw full-flow validation recording
-exists; the polished portfolio video is still pending. Publish the approved cut
-through YouTube or a GitHub Release rather than committing a large media file
-to the repository.
+A typical demo asks for an application status, checks missing documents,
+prepares a future travel-date change, confirms it once, observes the
+authoritative UI refresh, requests human support, and ends the call cleanly.
+The setup and verification commands are documented in
+[docs/LOCAL_DEVELOPMENT.md](./docs/LOCAL_DEVELOPMENT.md).
 
 ## Architecture
 
@@ -181,8 +179,9 @@ artifacts. Do not commit or publish them without inspection.
   formatting for consistently natural "A P P zero zero four" pronunciation is
   deferred to V1.1.
 
-Do not expose this local V1 as a public service without the production security
-controls listed in [docs/ROADMAP.md](./docs/ROADMAP.md).
+Do not expose this local V1 as a public service without authentication,
+authorization, TLS, origin controls, rate limits, provider secret management,
+and session-report retention controls.
 
 The source repository may still be public and continue evolving through
 branches and pull requests. The author has confirmed ownership of the generated
@@ -192,13 +191,9 @@ secret/generated-artifact scan before changing visibility.
 ## Documentation
 
 - [Engineering case study](./project.md)
-- [Blog preparation notes](./docs/BLOG_OUTLINE.md)
-- [Demo recording guide](./docs/DEMO_GUIDE.md)
 - [Architecture and trust boundaries](./docs/ARCHITECTURE.md)
 - [API, event, and persistence contracts](./docs/CONTRACTS.md)
-- [Current evidence and limitations](./docs/CURRENT_STATUS.md)
 - [Local development and troubleshooting](./docs/LOCAL_DEVELOPMENT.md)
-- [Remaining roadmap](./docs/ROADMAP.md)
 
 ## License
 

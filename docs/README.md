@@ -1,6 +1,6 @@
 # Waypoint Voice Lab documentation
 
-> Status snapshot: 2026-08-23. These documents describe the audited file state; use the latest Git commit or release tag for the exact revision.
+> Public technical documentation for the local synthetic-data V1.
 
 ## What Waypoint is
 
@@ -55,7 +55,10 @@ flowchart LR
     Agent --> FAQ
 ```
 
-The component boundaries and realtime path are implemented and manually exercised for the local synthetic-data V1. The V1 implementation PR is merged and a raw full-flow validation recording exists. The immediate milestone is now the blog, polished video, public links, and a final visual/accessibility pass. Production authentication, origin controls, rate limiting, deployment, and report-retention policy are intentionally deferred unless the project is exposed as a public service.
+The component boundaries and realtime path are implemented and manually
+exercised for the local synthetic-data V1. The remaining improvements are
+optional voice polish, UI QA, and production hardening if the project is ever
+deployed as a public service.
 
 Making the GitHub source repository public is not the same as deploying that
 service. The code can remain public and continue through branches and pull
@@ -66,13 +69,9 @@ local.
 
 | Document | Use it for |
 | --- | --- |
-| [Architecture](./ARCHITECTURE.md) | Components, ownership boundaries, runtime flows, diagrams, and the V1 architecture assessment |
+| [Architecture](./ARCHITECTURE.md) | Components, ownership boundaries, runtime flows, and trust boundaries |
 | [Contracts](./CONTRACTS.md) | HTTP payloads, LiveKit topics and attributes, frontend adapters, database tables, and configuration |
-| [Current status](./CURRENT_STATUS.md) | What is implemented, prepared, missing, tested, and currently risky |
 | [Local development](./LOCAL_DEVELOPMENT.md) | Setup, processes, expected current behavior, tests, and troubleshooting |
-| [Demo guide](./DEMO_GUIDE.md) | Short recording narrative, preflight, acceptance checks, and evidence to capture |
-| [Blog preparation](./BLOG_OUTLINE.md) | Suggested article narrative, verified claims, metrics, visuals, and claims to avoid |
-| [Integration roadmap](./ROADMAP.md) | Ordered remaining work and acceptance criteria for the next slices |
 
 ## Repository map
 
@@ -91,20 +90,9 @@ Waypoint-Voice-Project/
 └── requirements.txt       Fully pinned Python environment snapshot
 ```
 
-## Status language used in these docs
+## Documentation conventions
 
-- **Implemented**: code exists and its focused automated checks pass.
-- **Manually exercised**: a human completed the path against real local processes and LiveKit Cloud; this is useful evidence but not a repeatable automated guarantee.
-- **Prepared**: the receiving interface and types exist, but a required producer or server endpoint does not.
-- **Missing**: required code is not present in this repository snapshot.
-- **Not verified end to end**: individual layers exist, but the complete live path has not been exercised together.
-
-## Recommended context for a future chat
-
-For a quick handoff, give a future chat these three files first:
-
-1. This document.
-2. [Current status](./CURRENT_STATUS.md).
-3. [Architecture](./ARCHITECTURE.md).
-
-Then include [Contracts](./CONTRACTS.md) when the next task touches integration code. The status date and commit should be updated whenever a major slice lands so future chats can distinguish current facts from historical plans.
+- The README is the public entry point and quick-start guide.
+- The case study explains the engineering decisions and failure analysis.
+- Architecture and contracts describe stable system boundaries and interfaces.
+- Local development documents reproducible setup, testing, and troubleshooting.
