@@ -9,6 +9,7 @@ from livekit.agents import (
     Agent, 
     AgentServer,
     AgentSession,
+    ConversationItemAddedEvent,
     RunContext,
     TurnHandlingOptions,
     function_tool,
@@ -28,7 +29,7 @@ from livekit.plugins import (
     silero,
 )
 
-from livekit.agents.llm import ToolError
+from livekit.agents.llm import ChatMessage, ToolError
 
 import os
 import re
@@ -84,8 +85,65 @@ class WaypointSessionState:
     pending_application_id: str | None = None
     pending_travel_date: str | None = None
     pending_idempotency_key: str | None = None
+    pending_confirmation_granted: bool = False
 
     # the state exists only during the call
+
+
+_EXPLICIT_CONFIRMATIONS = {
+    "yes",
+    "yes please",
+    "confirm",
+    "confirmed",
+    "i confirm",
+    "i confirm it",
+    "confirm it",
+    "apply it",
+    "please apply it",
+    "go ahead",
+    "go ahead and apply it",
+    "yes apply it",
+    "yes change it",
+    "that is correct",
+    "that's correct",
+    "yes that is correct",
+    "yes that's correct",
+}
+
+
+def is_explicit_confirmation(text: str | None) -> bool:
+    """Return whether a complete user utterance explicitly confirms a change."""
+
+    if not text:
+        return False
+
+    normalized = text.casefold().replace("’", "'")
+    normalized = re.sub(r"[^a-z0-9']+", " ", normalized)
+    normalized = " ".join(normalized.split())
+    return normalized in _EXPLICIT_CONFIRMATIONS
+
+
+def attach_confirmation_tracking(
+    session: AgentSession[WaypointSessionState],
+) -> None:
+    """Track whether a pending change was confirmed in a later user turn."""
+
+    def on_conversation_item_added(event: ConversationItemAddedEvent) -> None:
+        item = event.item
+        if not isinstance(item, ChatMessage) or item.role != "user":
+            return
+
+        state = session.userdata
+        if state.pending_application_id is None:
+            state.pending_confirmation_granted = False
+            return
+
+        state.pending_confirmation_granted = is_explicit_confirmation(
+            item.text_content
+        )
+
+    session.on("conversation_item_added", on_conversation_item_added)
+
 
 class WayPointAssistant(Agent):
     def __init__(self) -> None:
@@ -343,6 +401,7 @@ class WayPointAssistant(Agent):
         state.pending_application_id = canonical_id
         state.pending_travel_date = canonical_date
         state.pending_idempotency_key = f"date-{uuid4().hex}"
+        state.pending_confirmation_granted = False
 
         return {
             "status": "confirmation_required",
@@ -377,6 +436,12 @@ class WayPointAssistant(Agent):
         ):
             raise ToolError(
                 "There is no pending travel-date change to apply."
+            )
+
+        if not state.pending_confirmation_granted:
+            raise ToolError(
+                "The pending travel-date change has not been explicitly "
+                "confirmed in a later user turn. Ask the user to confirm it."
             )
 
         application_id  = state.pending_application_id
@@ -438,6 +503,7 @@ class WayPointAssistant(Agent):
         state.pending_application_id = None
         state.pending_travel_date = None
         state.pending_idempotency_key = None
+        state.pending_confirmation_granted = False
 
         return result
 
@@ -617,6 +683,7 @@ async def waypoint_agent(ctx: agents.JobContext):
         ),
     )
 
+    attach_confirmation_tracking(session)
     attach_session_observers(session)
 
     # vad asks --> is the user currently producing speech like audio?

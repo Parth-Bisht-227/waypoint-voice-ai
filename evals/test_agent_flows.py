@@ -319,6 +319,7 @@ async def test_unsupported_knowledge_does_not_invent_an_allowance():
             "cannot find",
             "couldn't find",
             "could not find",
+            "not finding",
         )
     ), response
 
