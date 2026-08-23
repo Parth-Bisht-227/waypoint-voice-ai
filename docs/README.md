@@ -55,7 +55,7 @@ flowchart LR
     Agent --> FAQ
 ```
 
-The component boundaries and realtime path are implemented and manually exercised for the local synthetic-data V1. The immediate milestone is now a repeatable portfolio recording, a final evidence pass, and clean Git history. Production authentication, origin controls, rate limiting, deployment, and report-retention policy are intentionally deferred unless the project is exposed as a public service.
+The component boundaries and realtime path are implemented and manually exercised for the local synthetic-data V1. The V1 implementation PR is merged and a raw full-flow validation recording exists. The immediate milestone is now the blog, polished video, public links, and a final visual/accessibility pass. Production authentication, origin controls, rate limiting, deployment, and report-retention policy are intentionally deferred unless the project is exposed as a public service.
 
 Making the GitHub source repository public is not the same as deploying that
 service. The code can remain public and continue through branches and pull
@@ -71,6 +71,7 @@ local.
 | [Current status](./CURRENT_STATUS.md) | What is implemented, prepared, missing, tested, and currently risky |
 | [Local development](./LOCAL_DEVELOPMENT.md) | Setup, processes, expected current behavior, tests, and troubleshooting |
 | [Demo guide](./DEMO_GUIDE.md) | Short recording narrative, preflight, acceptance checks, and evidence to capture |
+| [Blog preparation](./BLOG_OUTLINE.md) | Suggested article narrative, verified claims, metrics, visuals, and claims to avoid |
 | [Integration roadmap](./ROADMAP.md) | Ordered remaining work and acceptance criteria for the next slices |
 
 ## Repository map

@@ -25,7 +25,7 @@ Those are verified local versions, not strict minimum versions.
 From the repository root:
 
 ```powershell
-uv sync
+uv sync --locked
 ```
 
 Then install the frontend from its lockfile:

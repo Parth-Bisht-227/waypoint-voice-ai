@@ -18,7 +18,7 @@ flowchart LR
 
 The existing architecture should now be demonstrated and documented, not redesigned.
 
-Status on 2026-08-23: the token endpoint and agent signal publisher are implemented, their focused tests pass, and human-operated custom-UI and LiveKit-UI calls exercised microphone/STT, agent audio/state/transcript, application context and card refetch, confirmed date mutation, end-call cleanup, restart, and report persistence. The remaining Priority 0 work is a clean scripted recording, final evidence checks, coherent commits, and the small residual visual/accessibility pass.
+Status on 2026-08-23: the implementation PR is merged, the verified suites pass, and a raw full-flow custom-UI recording exercised the core V1 story. The author confirmed ownership of the generated inspiration asset, and the repository now uses the MIT License. Remaining Priority 0 work is article/video packaging, public visibility, and the small residual visual/accessibility pass.
 
 ## Priority 0 — completed integration foundations
 
@@ -211,10 +211,10 @@ FastAPI, SQLite, LiveKit sessions, and provider credentials remain local.
 
 Before changing repository visibility:
 
-1. Resolve ownership/provenance for `frontend/ui-inspo/waypoint-frontend-inspo`. If it is unlicensed third-party material, remove it from public history rather than only deleting the current file.
-2. Choose a license, or consciously publish without one and retain default all-rights-reserved terms.
-3. Review and merge the focused backend, agent/evaluation, and documentation commits.
-4. Repeat the secret/generated-artifact scan and confirm no environment file, SQLite database, report, recording, cache, token, or build output is staged or tracked.
+- [x] Confirm ownership/provenance for the generated `frontend/ui-inspo/waypoint-frontend-inspo` asset.
+- [x] Select the MIT License for the source repository.
+- [x] Review and merge the focused V1 implementation commits.
+- [ ] Merge the license/blog-notes follow-up and repeat the secret/generated-artifact scan. Confirm no environment file, SQLite database, report, recording, cache, token, or build output is staged or tracked.
 
 ## Priority 0 — complete the portfolio package
 
@@ -225,10 +225,10 @@ These items may be completed after the source repository is public:
 3. Capture one architecture image or Mermaid rendering, one polished product screenshot, a concise evaluation table, and the final video link in the root README/case study.
 4. Perform the remaining narrow viewport, keyboard-only, reduced-motion, and autoplay-fallback checks. Record any unresolved intermittent audio-streaming behavior as a limitation.
 
-The first complete take has been captured locally with audio, live card updates,
-the confirmed mutation, explicit handoff, and clean disconnect. Review and trim
-that take before upload; a new recording is optional rather than a functional
-V1 requirement.
+A raw full-flow validation recording exists locally with audio, live card
+updates, the confirmed mutation, explicit handoff, and clean disconnect. Use it
+to prepare the article and polished demo; recording or editing the final public
+cut is packaging work rather than a functional V1 requirement.
 
 ### V1.1 voice polish
 
