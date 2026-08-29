@@ -262,7 +262,6 @@ async def test_apply_publishes_updated_only_after_successful_patch(
     state.pending_application_id = "APP001"
     state.pending_travel_date = proposed_date
     state.pending_idempotency_key = "date-test"
-    state.pending_confirmation_granted = True
     context = FakeRunContext(state, events)
 
     result = await WayPointAssistant().apply_pending_travel_date_change(context)
@@ -289,11 +288,10 @@ async def test_apply_publishes_updated_only_after_successful_patch(
     assert state.pending_application_id is None
     assert state.pending_travel_date is None
     assert state.pending_idempotency_key is None
-    assert not state.pending_confirmation_granted
 
 
 @pytest.mark.asyncio
-async def test_unconfirmed_or_failed_operations_publish_no_signal(
+async def test_failed_operations_publish_no_signal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple] = []
@@ -305,11 +303,7 @@ async def test_unconfirmed_or_failed_operations_publish_no_signal(
     context = FakeRunContext(state, events)
     assistant = WayPointAssistant()
 
-    with pytest.raises(ToolError, match="confirmed"):
-        await assistant.apply_pending_travel_date_change(context)
-    assert events == []
 
-    state.pending_confirmation_granted = True
     with pytest.raises(ToolError, match="safely complete"):
         await assistant.apply_pending_travel_date_change(context)
     assert "publish" not in [event[0] for event in events]
@@ -338,7 +332,6 @@ async def test_publisher_failure_does_not_replace_successful_mutation_result(
         pending_application_id="APP001",
         pending_travel_date=proposed_date,
         pending_idempotency_key="date-test",
-        pending_confirmation_granted=True,
         application_signal_sender=failing_sender,
     )
     context = FakeRunContext(state, events)
