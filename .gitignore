@@ -6,3 +6,4 @@ observability/reports/
 .env
 .env.*
 !agent/.env.example
+docs-private

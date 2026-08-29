@@ -175,9 +175,9 @@ def groq_llm() -> groq.LLM:
 def eval_session_connect_options() -> SessionConnectOptions:
     return SessionConnectOptions(
         llm_conn_options=APIConnectOptions(
-            max_retry=8,
-            retry_interval=8.0,
-            timeout=10.0,
+            max_retry=1,
+            retry_interval=1.0,
+            timeout=6.0,
         )
     )
 
@@ -247,7 +247,7 @@ async def test_travel_date_prepares_before_natural_confirmation():
 
             # Turn 2: a later natural, action-bearing confirmation may apply.
             result2 = await session.run(
-                user_input="Yeah, please change it."
+                user_input="Yeah, that's perfect."
             )
 
             names2 = function_names(result2)

@@ -90,7 +90,7 @@ async def get_missing_documents(application_id: str):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
 
-        #first check whether the applicaiton itself exists
+        #first check whether the application itself exists
         cursor = await db.execute(
             """
             SELECT application_id
