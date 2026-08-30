@@ -39,6 +39,93 @@ def test_get_existing_application(client: TestClient):
     assert data["status"] == "blocked"
 
 
+def test_create_application_is_persisted(client: TestClient):
+    travel_date = future_date()
+
+    response = client.post(
+        "/applications",
+        json={
+            "destination": "  Japan  ",
+            "travel_date": travel_date,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "application_id": "APP005",
+        "destination": "Japan",
+        "status": "processing",
+        "travel_date": travel_date,
+    }
+
+    stored = client.get("/applications/APP005")
+    assert stored.status_code == 200
+    assert stored.json() == response.json()
+
+    missing = client.get("/applications/APP005/missing-documents")
+    assert missing.status_code == 200
+    assert missing.json()["missing_documents"] == []
+
+
+def test_created_application_ids_increment(client: TestClient):
+    first = client.post(
+        "/applications",
+        json={
+            "destination": "Japan",
+            "travel_date": future_date(),
+        },
+    )
+    second = client.post(
+        "/applications",
+        json={
+            "destination": "Singapore",
+            "travel_date": future_date(1),
+        },
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["application_id"] == "APP005"
+    assert second.json()["application_id"] == "APP006"
+
+
+@pytest.mark.parametrize(
+    "payload, expected_status",
+    [
+        (
+            {
+                "destination": "Japan",
+                "travel_date": date.today().isoformat(),
+            },
+            400,
+        ),
+        (
+            {
+                "destination": "   ",
+                "travel_date": future_date(),
+            },
+            422,
+        ),
+        (
+            {
+                "destination": "Japan",
+                "travel_date": future_date(),
+                "status": "approved",
+            },
+            422,
+        ),
+    ],
+)
+def test_create_application_rejects_invalid_input(
+    client: TestClient,
+    payload: dict,
+    expected_status: int,
+):
+    response = client.post("/applications", json=payload)
+
+    assert response.status_code == expected_status
+
+
 def test_get_missing_application(client: TestClient):
     response = client.get("/applications/APP999")
     assert response.status_code == 404

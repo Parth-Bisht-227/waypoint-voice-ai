@@ -1,5 +1,5 @@
 from datetime import date
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .models import (
     ApplicationStatus,
     HandoffReason,
@@ -15,6 +15,20 @@ class ApplicationResponse(BaseModel):
     destination: str
     status: ApplicationStatus
     travel_date: date
+
+
+class ApplicationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid") #  means that callers may send only the fields defines in this class
+    destination: str = Field(max_length=80)
+    travel_date: date
+
+    @field_validator("destination")
+    @classmethod
+    def destination_must_not_be_blank(cls, value: str) -> str:
+        destination = value.strip()
+        if not destination:
+            raise ValueError("Destination must not be blank")
+        return destination
 
 class MissingDocumentsResponse(BaseModel):
     application_id: str

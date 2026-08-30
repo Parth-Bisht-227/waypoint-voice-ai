@@ -139,6 +139,79 @@ class WayPointAssistant(Agent):
             )
 
     @function_tool()
+    async def create_travel_application(
+        self,
+        context: RunContext[WaypointSessionState],
+        destination: str,
+        travel_date: str,
+    ) -> dict:
+        """
+        Create a confirmed synthetic Waypoint travel-support application.
+
+        Args:
+            destination: Travel destination.
+            travel_date: Intended future travel date in YYYY-MM-DD format.
+        """
+
+        destination = destination.strip()
+        if not destination:
+            raise ToolError("The destination is missing.")
+
+        try:
+            parsed_date = date.fromisoformat(travel_date)
+        except ValueError:
+            raise ToolError("I could not understand the intended travel date.")
+
+        if parsed_date <= date.today():
+            raise ToolError(
+                "The intended travel date must be in the future. "
+                "Ask the user to repeat the date including the year."
+            )
+
+        context.disallow_interruptions()
+        session = utils.http_context.http_session()
+
+        try:
+            async with session.post(
+                f"{BACKEND_BASE_URL}/applications",
+                json={
+                    "destination": destination,
+                    "travel_date": parsed_date.isoformat(),
+                },
+                timeout=3,
+            ) as response:
+                if response.status in (400, 422):
+                    raise ToolError(
+                        "The application details were not valid."
+                    )
+
+                if response.status != 201:
+                    raise ToolError(
+                        "The application could not be created safely."
+                    )
+
+                data = await response.json()
+
+        except TimeoutError:
+            raise ToolError(
+                "The application request timed out. "
+                "Do not claim that it was created."
+            )
+
+        application_id = data["application_id"]
+        result = {
+            "application_id": application_id,
+            "status": data["status"],
+        }
+
+        await publish_application_signal(
+            context.userdata.application_signal_sender,
+            "application_context",
+            application_id,
+        )
+        return result
+
+    @function_tool()
     async def get_application_status(
         self, 
         context: RunContext[WaypointSessionState],

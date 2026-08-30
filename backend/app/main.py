@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from .database import DB_PATH, init_db
 from .schemas import (
+    ApplicationCreateRequest,
     ApplicationResponse, 
     MissingDocumentsResponse,
     TravelDateUpdateRequest,
@@ -47,6 +48,81 @@ So we no longer need to manually run an init_db.py.
 '''
 
 # first real endpoint
+
+@app.post(
+    "/applications",
+    response_model=ApplicationResponse,
+    status_code=201,
+)
+async def create_application(request: ApplicationCreateRequest):
+    if request.travel_date <= date.today():
+        raise HTTPException(
+            status_code=400,
+            detail="Travel date must be in the future!",
+        )
+
+    travel_date = request.travel_date.isoformat()
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        try:
+            # Serialize ID allocation and insertion so concurrent requests
+            # cannot receive the same voice-friendly APP number.
+            await db.execute("BEGIN IMMEDIATE")
+
+            cursor = await db.execute(
+                """
+                SELECT MAX(
+                    CAST(SUBSTR(application_id, 4) AS INTEGER)
+                ) AS latest_number
+                FROM applications
+                """
+            )
+            row = await cursor.fetchone()
+            next_number = (row["latest_number"] or 0) + 1
+
+            if next_number > 999:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Application ID capacity reached",
+                )
+
+            application_id = f"APP{next_number:03d}"
+            result = {
+                "application_id": application_id,
+                "destination": request.destination,
+                "status": "processing",
+                "travel_date": travel_date,
+            }
+
+            await db.execute(
+                """
+                INSERT INTO applications (
+                    application_id,
+                    destination,
+                    status,
+                    travel_date
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    application_id,
+                    request.destination,
+                    "processing",
+                    travel_date,
+                ),
+            )
+            await db.commit()
+            return result
+
+        except HTTPException:
+            await db.rollback()
+            raise
+
+        except Exception:
+            await db.rollback()
+            raise
 
 @app.get(
     "/applications/{application_id}",

@@ -77,6 +77,17 @@ def mock_get_application_status(_context, application_id: str) -> dict:
     }
 
 
+def mock_create_travel_application(
+    _context,
+    destination: str,
+    travel_date: str,
+) -> dict:
+    return {
+        "application_id": "APP005",
+        "status": "processing",
+    }
+
+
 def mock_get_missing_documents(_context, application_id: str) -> dict:
     return {
         "application_id": application_id,
@@ -139,6 +150,7 @@ def safe_tool_mocks(
 ) -> dict[str, Callable]:
     """Build a fresh complete mock map so no production tool can execute."""
     mocks: dict[str, Callable] = {
+        "create_travel_application": mock_create_travel_application,
         "get_application_status": mock_get_application_status,
         "get_missing_documents": mock_get_missing_documents,
         "prepare_travel_date_change": mock_prepare_travel_date_change,
@@ -245,6 +257,59 @@ async def test_travel_date_prepares_before_natural_confirmation():
 
             assert "apply_pending_travel_date_change" in names2, diagnostics2
             assert "prepare_travel_date_change" not in names2, diagnostics2
+
+
+@pytest.mark.asyncio
+async def test_new_application_requires_confirmation_before_creation():
+    requested_date = date.today() + timedelta(days=120)
+    spoken_date = (
+        f"{requested_date:%B} "
+        f"{requested_date.day}, {requested_date.year}"
+    )
+    expected_date = requested_date.isoformat()
+
+    async with AgentSession[WaypointSessionState](
+        llm=groq_llm(),
+        userdata=WaypointSessionState(),
+        conn_options=eval_session_connect_options(),
+    ) as session:
+        with mock_tools(
+            WayPointAssistant,
+            safe_tool_mocks(),
+        ):
+            await session.start(WayPointAssistant())
+
+            proposal = await session.run(
+                user_input=(
+                    "Create a new Waypoint application for Japan with a "
+                    f"travel date of {spoken_date}."
+                )
+            )
+            proposal_names = function_names(proposal)
+            proposal_diagnostics = result_diagnostics(proposal)
+
+            assert "create_travel_application" not in proposal_names, (
+                proposal_diagnostics
+            )
+
+            confirmation = await session.run(
+                user_input="Yes, create it."
+            )
+            confirmation_names = function_names(confirmation)
+            confirmation_diagnostics = result_diagnostics(confirmation)
+
+            assert confirmation_names.count(
+                "create_travel_application"
+            ) == 1, confirmation_diagnostics
+
+            calls = function_arguments(
+                confirmation,
+                "create_travel_application",
+            )
+            assert calls[0] == {
+                "destination": "Japan",
+                "travel_date": expected_date,
+            }, confirmation_diagnostics
 
 
 @pytest.mark.asyncio
