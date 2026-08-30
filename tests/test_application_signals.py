@@ -46,10 +46,12 @@ class RecordingHttpSession:
         *,
         get_status: int = 200,
         patch_status: int = 200,
+        post_status: int = 201,
     ) -> None:
         self.events = events
         self.get_status = get_status
         self.patch_status = patch_status
+        self.post_status = post_status
 
     def get(self, url: str, *, timeout: int) -> FakeResponse:
         self.events.append(("get_requested", url, timeout))
@@ -90,6 +92,26 @@ class RecordingHttpSession:
             },
             self.events,
             "patch",
+        )
+
+    def post(
+        self,
+        url: str,
+        *,
+        json: dict,
+        timeout: int,
+    ) -> FakeResponse:
+        self.events.append(("post_requested", url, json, timeout))
+        return FakeResponse(
+            self.post_status,
+            {
+                "application_id": "APP005",
+                "destination": json["destination"],
+                "status": "processing",
+                "travel_date": json["travel_date"],
+            },
+            self.events,
+            "post",
         )
 
 
@@ -138,11 +160,13 @@ def install_http_session(
     *,
     get_status: int = 200,
     patch_status: int = 200,
+    post_status: int = 201,
 ) -> RecordingHttpSession:
     session = RecordingHttpSession(
         events,
         get_status=get_status,
         patch_status=patch_status,
+        post_status=post_status,
     )
     monkeypatch.setattr(
         agent_module.utils.http_context,
@@ -219,6 +243,65 @@ async def test_authoritative_read_tools_publish_context_after_http_success(
     assert events[-1][1] == (
         b'{"type":"application_context","application_id":"APP001"}'
     )
+
+
+@pytest.mark.asyncio
+async def test_create_application_publishes_new_context_after_http_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple] = []
+    install_http_session(monkeypatch, events)
+    state = state_with_livekit_sender(events)
+    context = FakeRunContext(state, events)
+    travel_date = (date.today() + timedelta(days=90)).isoformat()
+
+    result = await WayPointAssistant().create_travel_application(
+        context,
+        destination="Japan",
+        travel_date=travel_date,
+    )
+
+    assert result == {
+        "application_id": "APP005",
+        "status": "processing",
+    }
+    assert [event[0] for event in events] == [
+        "disallow_interruptions",
+        "post_requested",
+        "post_entered",
+        "post_json",
+        "publish",
+    ]
+    assert events[1][2] == {
+        "destination": "Japan",
+        "travel_date": travel_date,
+    }
+    assert events[-1] == (
+        "publish",
+        b'{"type":"application_context","application_id":"APP005"}',
+        True,
+        APPLICATION_SIGNAL_TOPIC,
+    )
+
+
+@pytest.mark.asyncio
+async def test_failed_application_creation_publishes_no_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple] = []
+    install_http_session(monkeypatch, events, post_status=500)
+    state = state_with_livekit_sender(events)
+    context = FakeRunContext(state, events)
+    travel_date = (date.today() + timedelta(days=90)).isoformat()
+
+    with pytest.raises(ToolError, match="created safely"):
+        await WayPointAssistant().create_travel_application(
+            context,
+            destination="Japan",
+            travel_date=travel_date,
+        )
+
+    assert "publish" not in [event[0] for event in events]
 
 
 @pytest.mark.asyncio
