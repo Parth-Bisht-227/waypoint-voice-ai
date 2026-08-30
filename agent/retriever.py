@@ -115,6 +115,36 @@ def tokenize(text: str) -> set[str]:
         if token not in STOP_WORDS
     }
 
+
+def matches_required_query_terms(query: str, faq: dict) -> bool:
+    """Keep scenario-specific FAQs from matching the wrong destination."""
+
+    required_terms = faq.get("required_query_terms", [])
+    if not required_terms:
+        return True
+
+    normalized_query = normalize_text(query)
+    return any(
+        normalize_text(term) in normalized_query
+        for term in required_terms
+    )
+
+
+def exclusive_query_categories(
+    query: str,
+    faqs: list[dict],
+) -> set[str]:
+    """Find categories that explicitly claim a query's domain terms."""
+
+    normalized_query = normalize_text(query)
+    return {
+        faq["category"]
+        for faq in faqs
+        for term in faq.get("exclusive_query_terms", [])
+        if normalize_text(term) in normalized_query
+    }
+
+
 @lru_cache(maxsize=1)
 def load_faqs() -> list[dict]:
     """
@@ -160,18 +190,18 @@ def score_faq(query: str, faq:dict) -> int:
         query_tokens & question_tokens
     )
 
-    # Keywords are deliberately curated search hints,
-    # so give them slightly more weight.
+    # Keywords are deliberately curated search hints. Phrase matches can each
+    # contribute, while overlapping keyword tokens count only once so repeated
+    # generic words cannot overwhelm a more specific FAQ question.
+    keyword_tokens: set[str] = set()
     for keyword in faq.get("keywords", []):
         normalized_keyword = normalize_text(keyword)
-        keyword_tokens = tokenize(keyword)
+        keyword_tokens.update(tokenize(keyword))
 
         if normalized_keyword in normalized_query:
             score += 4
 
-        score += 3 * len(
-            query_tokens & keyword_tokens
-        )
+    score += 3 * len(query_tokens & keyword_tokens)
 
     return score
 
@@ -190,20 +220,38 @@ def search_faqs(
         return []
     
     results = []
+    faqs = load_faqs()
+    exclusive_categories = exclusive_query_categories(query, faqs)
 
-    for faq in load_faqs():
+    for faq in faqs:
+        if (
+            exclusive_categories
+            and faq["category"] not in exclusive_categories
+        ):
+            continue
+
+        if not matches_required_query_terms(query, faq):
+            continue
+
         score = score_faq(query, faq)
 
         if score >= min_score:
-            results.append(
-                {
-                    "id": faq["id"],
-                    "category": faq["category"],
-                    "question": faq["question"],
-                    "answer": faq["answer"],
-                    "score": score,
-                }
-            )
+            result = {
+                "id": faq["id"],
+                "category": faq["category"],
+                "question": faq["question"],
+                "answer": faq["answer"],
+                "score": score,
+            }
+            for metadata_key in (
+                "official_source",
+                "source_url",
+                "last_reviewed",
+            ):
+                if metadata_key in faq:
+                    result[metadata_key] = faq[metadata_key]
+
+            results.append(result)
 
     results.sort(
         key=lambda item: item["score"],
@@ -211,3 +259,23 @@ def search_faqs(
     )
 
     return results[:top_k]
+
+
+def search_faq_answer(query: str) -> dict:
+    """Return one compact, model-facing answer from the local FAQ corpus."""
+
+    results = search_faqs(
+        query=query,
+        top_k=1,
+        min_score=2,
+    )
+    if not results:
+        return {"found": False}
+
+    top_result = results[0]
+    response = {"answer": top_result["answer"]}
+
+    if source := top_result.get("official_source"):
+        response["source"] = source
+
+    return response

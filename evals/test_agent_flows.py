@@ -99,7 +99,6 @@ def mock_prepare_travel_date_change(
         "application_id": application_id,
         "current_date": future_date(30),
         "proposed_date": new_date,
-        "message": "Ask for explicit confirmation before applying.",
     }
 
 
@@ -127,20 +126,11 @@ def mock_handoff_to_human(
 
 def mock_search_support_knowledge(_context, query: str) -> dict:
     return {
-        "found": True,
-        "results": [
-            {
-                "id": "faq_002",
-                "category": "application_status",
-                "question": "What does blocked mean?",
-                "answer": (
-                    "Blocked means the application cannot currently continue "
-                    "through the normal process. The exact reason must come "
-                    "from application-specific information or human support."
-                ),
-                "score": 20,
-            }
-        ],
+        "answer": (
+            "Blocked means the application cannot currently continue through "
+            "the normal process. The exact reason must come from "
+            "application-specific information or human support."
+        ),
     }
 
 
@@ -332,10 +322,7 @@ async def test_incomplete_date_request_asks_for_detail_without_handoff():
 
 
 def mock_unsupported_knowledge(_context, query: str) -> dict:
-    return {
-        "found": False,
-        "results": [],
-    }
+    return {"found": False}
 
 
 @pytest.mark.asyncio
