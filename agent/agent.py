@@ -25,7 +25,7 @@ from agent.session_resilience import (
     attach_llm_failure_handler,
     schedule_latency_filler,
 )
-from agent.retriever import search_faqs
+from agent.retriever import search_faq_answer
 from agent.application_signals import (
     ApplicationSignalSender,
     make_application_signal_sender,
@@ -265,10 +265,7 @@ class WayPointAssistant(Agent):
         new_date: str,
     ) -> dict:
         """
-        Validate and store a proposed travel-date change without applying it.
-
-        Call this silently once the application ID and complete date are known.
-        After confirmation_required, ask the caller to confirm the proposal once.
+        Prepare a future travel-date change without applying it.
 
         Args:
             application_id: Application identifier.
@@ -326,10 +323,6 @@ class WayPointAssistant(Agent):
             "application_id": canonical_id,
             "current_date": application["travel_date"],
             "proposed_date": canonical_date,
-            "message": (
-                "Ask the user to explicitly confirm this exact date "
-                "before applying the change."
-            ),
         }
 
         await publish_application_signal(
@@ -345,11 +338,7 @@ class WayPointAssistant(Agent):
         self,
         context: RunContext[WaypointSessionState],
     ) -> dict:
-        """
-        Apply the currently pending travel-date change.
-
-        Call only when the caller confirms the prepared proposal.
-        """
+        """Apply the prepared travel-date change after caller confirmation."""
 
         state = context.userdata
 
@@ -506,30 +495,15 @@ class WayPointAssistant(Agent):
         query: str,
     ) -> dict:
         """
-        Search grounded Waypoint support knowledge for a specific question.
+        Search grounded Waypoint support or curated Japan visa guidance.
 
         Args:
-            query: The user's support question or a concise search query.
+            query: A concise question; include Japan for Japan visa follow-ups.
         
         """
-        results = search_faqs(
-            query = query,
-            top_k = 3,
-            min_score = 2,
-        )
-        if not results:
-            return {
-                "found": False,
-                "results": [],
-            }
+        return search_faq_answer(query)
 
-        return {
-            "found": True,
-            "results": results,
-        }
-
-    ''' path here is simply: LLM -> Py fn tool -> search_faqs() -> faqs.json cached in memory
-    -> top matches returned'''
+    '''The LLM receives one compact answer from the locally cached FAQ search.'''
 
 
 server = AgentServer() 

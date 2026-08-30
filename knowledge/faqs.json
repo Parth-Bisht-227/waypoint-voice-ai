@@ -101,7 +101,48 @@
     "id": "faq_015",
     "category": "scope",
     "question": "What can Waypoint help with?",
-    "answer": "Waypoint can provide grounded support information, check application status and missing documents, prepare and apply confirmed travel-date changes, and request human support. It should not claim capabilities that are not exposed through its tools or knowledge base.",
+    "answer": "Waypoint can explain supported travel processes and give curated Japan tourist-visa guidance for Indian passport holders who reside in and apply from India. It can also check applications, find missing documents, update confirmed travel dates, and request human support.",
     "keywords": ["help", "capabilities", "what can you do", "support"]
+  },
+  {
+    "id": "faq_016",
+    "category": "visa_guidance",
+    "question": "Can an Indian passport holder apply for a Japan tourist eVisa?",
+    "answer": "Indian passport holders who reside in and apply from India can use Japan's eVisa route for a single-entry tourism stay of up to 90 days, submitting through VFS Global. Check the current Embassy of Japan in India and VFS instructions before applying because eligibility can change.",
+    "keywords": ["Japan tourist visa", "Japan eVisa", "Indian passport Japan", "visa for Japan", "short term Japan tourism", "Japan holiday visa"],
+    "required_query_terms": ["Japan", "Tokyo", "Kyoto", "Osaka"],
+    "official_source": "Embassy of Japan in India — The JAPAN eVISA system",
+    "source_url": "https://www.in.emb-japan.go.jp/itpr_ja/11_000001_01148.html",
+    "last_reviewed": "2026-08-30"
+  },
+  {
+    "id": "faq_017",
+    "category": "visa_guidance",
+    "question": "What documents should I prepare for a Japan tourist visa?",
+    "answer": "For short-term tourism, prepare the current application form and photo, your passport, trip and accommodation details, and the financial evidence listed in the current checklist. Requirements can vary, so check the latest VFS Japan-in-India checklist for your application centre.",
+    "keywords": ["Japan visa documents", "Japan visa checklist", "documents for Japan", "passport photo itinerary hotel booking", "bank statement financial evidence", "what do I need for Japan", "Tokyo holiday documents"],
+    "required_query_terms": ["Japan", "Tokyo", "Kyoto", "Osaka"],
+    "official_source": "VFS Global — Japan visa applications in India",
+    "source_url": "https://visa.vfsglobal.com/ind/en/jpn/apply-visa",
+    "last_reviewed": "2026-08-30"
+  },
+  {
+    "id": "faq_018",
+    "category": "visa_guidance",
+    "question": "How do I apply for a Japan tourist visa from India?",
+    "answer": "Confirm short-term tourism is the right category, then submit the current form and supporting documents through a VFS Japan Visa Application Centre and pay the applicable charges. Check your centre's appointment rules and use VFS tracking while the Embassy or Consulate decides the application.",
+    "keywords": ["apply through VFS", "visa application centre", "appointment rules", "submission process", "track application"],
+    "required_query_terms": ["Japan", "Tokyo", "Kyoto", "Osaka"],
+    "official_source": "Embassy of Japan in India — Visa",
+    "source_url": "https://www.in.emb-japan.go.jp/itpr_en/Visa.html",
+    "last_reviewed": "2026-08-30"
+  },
+  {
+    "id": "faq_019",
+    "category": "visa_guidance",
+    "question": "Which destinations have visa guidance in Waypoint?",
+    "answer": "The current demo offers verified tourist-visa guidance only for Indian passport holders who reside in and apply from India for short-term travel to Japan. Other destinations, nationalities, residence countries, and visa purposes are not covered yet.",
+    "keywords": ["visa guidance", "visa destinations", "visa countries", "which visas", "US visa", "United States visa", "Singapore visa", "other destination visa"],
+    "exclusive_query_terms": ["visa", "eVisa"]
   }
 ]
