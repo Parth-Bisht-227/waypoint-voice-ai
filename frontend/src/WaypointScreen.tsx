@@ -104,14 +104,15 @@ export function WaypointScreen() {
         amplitude={voice.amplitude}
         state={voiceState}
         transportState={voice.transportState}
+        isMicrophoneMuted={voice.isMicrophoneMuted}
         canPlaybackAudio={voice.canPlaybackAudio}
         errorMessage={voice.error?.message}
         transcript={voice.transcript}
         onStart={() => void voice.start()}
         onEnd={() => void voice.end()}
+        onToggleMicrophoneMute={() => void voice.toggleMicrophoneMute()}
         onEnableAudio={() => void voice.enableAudio()}
       />
     </div>
   );
 }
-

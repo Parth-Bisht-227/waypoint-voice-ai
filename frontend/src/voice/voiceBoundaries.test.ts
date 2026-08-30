@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LocalAudioTrack } from 'livekit-client';
+import type { LocalAudioTrack, Room } from 'livekit-client';
 import { parseApplicationSignal } from './applicationEvents';
 import { LiveKitSessionController } from './livekitSession';
 import { upsertTranscriptEntry } from './transcriptReducer';
@@ -10,6 +10,37 @@ import {
 } from './types';
 
 const encoder = new TextEncoder();
+
+function connectedRoomStub(): Room {
+  const localParticipant = {
+    identity: 'traveler-web',
+    publishTrack: async (_track: LocalAudioTrack) => undefined,
+    unpublishTrack: async (track: LocalAudioTrack) => {
+      track.stop();
+    },
+  };
+
+  return {
+    name: 'waypoint-test-room',
+    canPlaybackAudio: true,
+    localParticipant,
+    remoteParticipants: new Map(),
+    connect: async () => undefined,
+    disconnect: async () => undefined,
+    startAudio: async () => undefined,
+    on() {
+      return this;
+    },
+    off() {
+      return this;
+    },
+    registerTextStreamHandler() {},
+    unregisterTextStreamHandler() {},
+    getParticipantByIdentity() {
+      return undefined;
+    },
+  } as unknown as Room;
+}
 
 function entry(
   overrides: Partial<VoiceTranscriptEntry> = {},
@@ -101,6 +132,72 @@ describe('voice presentation boundaries', () => {
       },
     });
     expect(microphoneStopped).toBe(true);
+  });
+
+  it('mutes and unmutes the published microphone track, then resets on end', async () => {
+    let isMuted = false;
+    let microphoneStopped = false;
+    let muteCalls = 0;
+    let unmuteCalls = 0;
+    const microphoneTrack = {
+      get isMuted() {
+        return isMuted;
+      },
+      async mute() {
+        muteCalls += 1;
+        isMuted = true;
+      },
+      async unmute() {
+        unmuteCalls += 1;
+        isMuted = false;
+      },
+      stop() {
+        microphoneStopped = true;
+      },
+    } as unknown as LocalAudioTrack;
+    const controller = new LiveKitSessionController({
+      roomFactory: connectedRoomStub,
+      microphoneTrackFactory: async () => microphoneTrack,
+      getToken: async () => ({
+        serverUrl: 'wss://voice.example.test',
+        participantToken: 'test-token',
+      }),
+    });
+
+    await controller.start();
+
+    expect(controller.getSnapshot()).toMatchObject({
+      transportState: 'connected',
+      isMicrophoneMuted: false,
+    });
+
+    expect(await controller.toggleMicrophoneMute()).toBe(true);
+    expect(muteCalls).toBe(1);
+    expect(controller.getSnapshot().isMicrophoneMuted).toBe(true);
+
+    expect(await controller.toggleMicrophoneMute()).toBe(true);
+    expect(unmuteCalls).toBe(1);
+    expect(controller.getSnapshot().isMicrophoneMuted).toBe(false);
+
+    await controller.toggleMicrophoneMute();
+    await controller.end();
+
+    expect(microphoneStopped).toBe(true);
+    expect(controller.getSnapshot()).toMatchObject({
+      transportState: 'disconnected',
+      isMicrophoneMuted: false,
+    });
+  });
+
+  it('leaves mute state unchanged when no microphone track is available', async () => {
+    const controller = new LiveKitSessionController({
+      getToken: async () => {
+        throw new Error('not used');
+      },
+    });
+
+    expect(await controller.toggleMicrophoneMute()).toBe(false);
+    expect(controller.getSnapshot().isMicrophoneMuted).toBe(false);
   });
 
   it('gives transport failures and reconnection precedence in UI state', () => {

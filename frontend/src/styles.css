@@ -646,6 +646,17 @@ a:focus-visible,
   background: var(--night);
 }
 
+.session-control--mute {
+  color: var(--paper);
+  border-color: var(--fog);
+  background: var(--charcoal);
+}
+
+.session-control--mute[aria-pressed='true'] {
+  color: var(--void);
+  background: var(--paper);
+}
+
 .session-control--end:disabled {
   color: var(--graphite);
   border-color: var(--charcoal);
@@ -659,6 +670,16 @@ a:focus-visible,
   }
 
   .session-control--talk:hover {
+    color: var(--paper);
+    background: var(--charcoal);
+  }
+
+  .session-control--mute:hover {
+    color: var(--void);
+    background: var(--fog);
+  }
+
+  .session-control--mute[aria-pressed='true']:hover {
     color: var(--paper);
     background: var(--charcoal);
   }
@@ -1288,4 +1309,3 @@ a:focus-visible,
     transition-duration: 0.01ms !important;
   }
 }
-

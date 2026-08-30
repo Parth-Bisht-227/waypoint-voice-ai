@@ -11,11 +11,13 @@ export interface VoiceDockProps {
   amplitude: number;
   state: VoiceUiState;
   transportState: VoiceTransportState;
+  isMicrophoneMuted: boolean;
   canPlaybackAudio: boolean;
   errorMessage?: string | null;
   transcript: readonly VoiceTranscriptEntry[];
   onStart: () => void;
   onEnd: () => void;
+  onToggleMicrophoneMute: () => void;
   onEnableAudio: () => void;
 }
 
@@ -133,11 +135,13 @@ export function VoiceDock({
   amplitude,
   state,
   transportState,
+  isMicrophoneMuted,
   canPlaybackAudio,
   errorMessage,
   transcript,
   onStart,
   onEnd,
+  onToggleMicrophoneMute,
   onEnableAudio,
 }: VoiceDockProps) {
   const currentUtterance = utteranceDisplay(
@@ -179,9 +183,11 @@ export function VoiceDock({
         <SessionControls
           state={state}
           transportState={transportState}
+          isMicrophoneMuted={isMicrophoneMuted}
           canPlaybackAudio={canPlaybackAudio}
           onStart={onStart}
           onEnd={onEnd}
+          onToggleMicrophoneMute={onToggleMicrophoneMute}
           onEnableAudio={onEnableAudio}
         />
       </div>
