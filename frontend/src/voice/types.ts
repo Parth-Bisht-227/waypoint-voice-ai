@@ -74,6 +74,7 @@ export interface VoiceSessionSnapshot {
   agentState: VoiceAgentState;
   transcript: readonly VoiceTranscriptEntry[];
   amplitude: number;
+  isMicrophoneMuted: boolean;
   canPlaybackAudio: boolean;
   error: VoiceSessionError | null;
   roomName: string | null;
@@ -94,6 +95,7 @@ export const INITIAL_VOICE_SESSION_SNAPSHOT: VoiceSessionSnapshot = {
   agentState: 'unavailable',
   transcript: [],
   amplitude: 0,
+  isMicrophoneMuted: false,
   canPlaybackAudio: true,
   error: null,
   roomName: null,

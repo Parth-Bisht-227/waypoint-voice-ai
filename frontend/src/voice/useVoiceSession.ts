@@ -27,6 +27,7 @@ export interface UseVoiceSessionOptions
 export interface UseVoiceSessionResult extends VoiceSessionSnapshot {
   start: () => Promise<void>;
   end: () => Promise<void>;
+  toggleMicrophoneMute: () => Promise<boolean>;
   enableAudio: () => Promise<boolean>;
   clearTranscript: () => void;
 }
@@ -71,6 +72,10 @@ export function useVoiceSession({
 
   const start = useCallback(() => controller.start(), [controller]);
   const end = useCallback(() => controller.end(), [controller]);
+  const toggleMicrophoneMute = useCallback(
+    () => controller.toggleMicrophoneMute(),
+    [controller],
+  );
   const enableAudio = useCallback(
     () => controller.enableAudio(),
     [controller],
@@ -84,6 +89,7 @@ export function useVoiceSession({
     ...snapshot,
     start,
     end,
+    toggleMicrophoneMute,
     enableAudio,
     clearTranscript,
   };

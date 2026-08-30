@@ -187,6 +187,7 @@ export class LiveKitSessionController {
       this.updateSnapshot({
         transportState: 'disconnecting',
         agentState: 'unavailable',
+        isMicrophoneMuted: false,
         error: null,
       });
     }
@@ -197,6 +198,7 @@ export class LiveKitSessionController {
           transportState: 'disconnected',
           agentState: 'unavailable',
           amplitude: 0,
+          isMicrophoneMuted: false,
           canPlaybackAudio: true,
           error: null,
           roomName: null,
@@ -239,6 +241,33 @@ export class LiveKitSessionController {
     }
   };
 
+  toggleMicrophoneMute = async (): Promise<boolean> => {
+    const microphoneTrack = this.microphoneTrack;
+
+    if (!microphoneTrack) {
+      return false;
+    }
+
+    try {
+      if (microphoneTrack.isMuted) {
+        await microphoneTrack.unmute();
+      } else {
+        await microphoneTrack.mute();
+      }
+
+      if (this.microphoneTrack !== microphoneTrack) {
+        return false;
+      }
+
+      this.updateSnapshot({
+        isMicrophoneMuted: microphoneTrack.isMuted,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   clearTranscript = (): void => {
     if (this.snapshot.transcript.length > 0) {
       this.updateSnapshot({ transcript: [] });
@@ -259,6 +288,7 @@ export class LiveKitSessionController {
       agentState: 'unavailable',
       transcript: [],
       amplitude: 0,
+      isMicrophoneMuted: false,
       canPlaybackAudio: true,
       error: null,
       roomName: null,
@@ -347,6 +377,7 @@ export class LiveKitSessionController {
           transportState: 'error',
           agentState: 'unavailable',
           amplitude: 0,
+          isMicrophoneMuted: false,
           canPlaybackAudio: true,
           error: {
             code: errorCode,
@@ -391,6 +422,7 @@ export class LiveKitSessionController {
             transportState: 'error',
             agentState: 'disconnected',
             amplitude: 0,
+            isMicrophoneMuted: false,
             canPlaybackAudio: true,
             error: {
               code: 'connection-lost',
@@ -718,6 +750,10 @@ export class LiveKitSessionController {
     this.room = null;
     this.microphoneTrack = null;
     this.agentIdentity = null;
+
+    if (this.snapshot.isMicrophoneMuted) {
+      this.updateSnapshot({ isMicrophoneMuted: false });
+    }
 
     for (const cleanup of this.roomListenerCleanup.splice(0)) {
       try {
