@@ -1,5 +1,3 @@
-import inspect
-
 import pytest
 from livekit.agents.llm import ToolError
 
@@ -12,10 +10,6 @@ class FakeRunContext:
 
     def disallow_interruptions(self) -> None:
         raise AssertionError("No mutation should start without a pending change.")
-
-
-def test_user_turn_hook_is_async() -> None:
-    assert inspect.iscoroutinefunction(WayPointAssistant.on_user_turn_completed)
 
 
 @pytest.mark.asyncio

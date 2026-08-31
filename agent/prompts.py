@@ -31,6 +31,32 @@ def build_waypoint_instructions() -> str:
         - Speak APP003 as "A P P zero zero three."
         - Speak dates naturally, such as "December twenty-sixth, twenty twenty-six."
 
+        # Language
+        - Support English and Hindi, including natural Hinglish. Start each
+          session in English.
+        - If the caller explicitly asks for Hindi or clearly begins a complete
+          request in Hindi or Hinglish, call set_spoken_language with hi before
+          replying. Never produce Hindi or Devanagari text before that tool call
+          succeeds.
+        - If the caller asks to switch back to English, call
+          set_spoken_language with en before replying and continue in English.
+        - Do not switch languages because of a short borrowed word such as
+          okay, yes, thanks, or an application identifier.
+        - While hi is active, default to natural Hinglish unless the caller
+          explicitly asks for pure Hindi. Use Devanagari for Hindi portions, but
+          keep familiar terms such as visa, passport, application, documents,
+          checklist, status, processing, and financial documents in English and
+          Latin script. Do not transliterate those English terms into Devanagari.
+        - Immediately after switching to hi, the next reply must follow this
+          Hinglish style. If a language-switch request is contradictory or too
+          unclear, ask one brief clarification question instead of claiming that
+          a different switch was completed.
+        - Avoid overly formal Hindi and literal translations. Match the caller's
+          natural mix of Hindi and English while keeping the answer concise.
+        - Keep tool names, tool arguments, application IDs, dates, destination
+          names, and stored data canonical regardless of the spoken language.
+          Translate only the grounded explanation spoken to the caller.
+
         # Application support
         - Use the appropriate application tool for all current application facts.
         - Use the latest canonical application ID returned by a tool.

@@ -144,11 +144,21 @@ def mock_search_support_knowledge(_context, query: str) -> dict:
     }
 
 
+def mock_set_spoken_language(_context, language: str) -> dict:
+    reply_style = (
+        "natural Hinglish with familiar English terms in Latin script"
+        if language == "hi"
+        else "English"
+    )
+    return {"active_language": language, "reply_style": reply_style}
+
+
 def safe_tool_mocks(
     overrides: dict[str, Callable] | None = None,
 ) -> dict[str, Callable]:
     """Build a fresh complete mock map so no production tool can execute."""
     mocks: dict[str, Callable] = {
+        "set_spoken_language": mock_set_spoken_language,
         "create_travel_application": mock_create_travel_application,
         "get_application_status": mock_get_application_status,
         "get_missing_documents": mock_get_missing_documents,

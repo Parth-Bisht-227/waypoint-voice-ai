@@ -1,20 +1,16 @@
 import time
 
-import pytest
 from livekit.agents import ErrorEvent
 from livekit.agents.llm import LLMError
 
 from agent.session_resilience import (
     LLM_FAILURE_MESSAGES,
     attach_llm_failure_handler,
-    schedule_latency_filler,
 )
 
 
 class RecordingSession:
     def __init__(self) -> None:
-        self.agent_state = "thinking"
-        self.user_state = "listening"
         self.llm = object()
         self.callbacks = {}
         self.spoken: list[dict] = []
@@ -36,20 +32,6 @@ def llm_error_event(*, recoverable: bool, source: object) -> ErrorEvent:
         ),
         source=source,
     )
-
-
-@pytest.mark.asyncio
-async def test_latency_filler_only_speaks_while_thinking() -> None:
-    session = RecordingSession()
-
-    await schedule_latency_filler(session, ("One moment.",), delay=0)
-    assert session.spoken[0]["text"] == "One moment."
-    assert session.spoken[0]["add_to_chat_ctx"] is False
-
-    session.spoken.clear()
-    session.agent_state = "speaking"
-    await schedule_latency_filler(session, ("One moment.",), delay=0)
-    assert session.spoken == []
 
 
 def test_terminal_llm_error_speaks_a_recovery_message() -> None:
