@@ -1,4 +1,3 @@
-import asyncio
 import sys
 from dataclasses import dataclass
 from uuid import uuid4
@@ -21,11 +20,7 @@ from livekit.agents import (
 )
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from agent.prompts import build_waypoint_instructions
-from agent.session_resilience import (
-    LATENCY_FILLERS,
-    attach_llm_failure_handler,
-    schedule_latency_filler,
-)
+from agent.session_resilience import attach_llm_failure_handler
 from agent.retriever import search_faq_answer
 from agent.application_signals import (
     ApplicationSignalSender,
@@ -45,7 +40,7 @@ from livekit.plugins import (
     silero,
 )
 
-from livekit.agents.llm import ChatMessage, ToolError
+from livekit.agents.llm import ToolError
 
 import os
 import re
@@ -64,6 +59,8 @@ BACKEND_BASE_URL = os.getenv(
     "BACKEND_BASE_URL",
     "http://127.0.0.1:8000"
 )
+
+SpokenLanguage = Literal["en", "hi"]
 
 
 def create_llm() -> llm.LLM:
@@ -128,6 +125,7 @@ def normalize_application_id(value:str) -> str | None:
 
 @dataclass
 class WaypointSessionState:
+    active_language: SpokenLanguage = "en"
     pending_application_id: str | None = None
     pending_travel_date: str | None = None
     pending_idempotency_key: str | None = None
@@ -141,28 +139,38 @@ class WayPointAssistant(Agent):
         super().__init__(
             instructions=build_waypoint_instructions()
         )
-        self._latency_filler_task: asyncio.Task[None] | None = None
 
-    async def on_user_turn_completed(
+    @function_tool()
+    async def set_spoken_language(
         self,
-        turn_ctx,
-        new_message: ChatMessage,
-    ) -> None:
-        if self._latency_filler_task and not self._latency_filler_task.done():
-            self._latency_filler_task.cancel()
+        context: RunContext[WaypointSessionState],
+        language: SpokenLanguage,
+    ) -> dict:
+        """Switch spoken replies between English and Hindi/Hinglish.
 
-        self._latency_filler_task = schedule_latency_filler(
-            self.session,
-            LATENCY_FILLERS,
+        Call when the caller explicitly requests a language or clearly begins
+        a full request in the other supported language.
+
+        Args:
+            language: Use en for English or hi for Hindi and Hinglish.
+        """
+
+        tts = context.session.tts
+        update_options = getattr(tts, "update_options", None)
+        if not callable(update_options):
+            raise ToolError("The spoken language could not be changed safely.")
+
+        update_options(language=language)
+        context.userdata.active_language = language
+        reply_style = (
+            "natural Hinglish with familiar English terms in Latin script"
+            if language == "hi"
+            else "English"
         )
-
-    async def on_exit(self) -> None:
-        if self._latency_filler_task and not self._latency_filler_task.done():
-            self._latency_filler_task.cancel()
-            await asyncio.gather(
-                self._latency_filler_task,
-                return_exceptions=True,
-            )
+        return {
+            "active_language": language,
+            "reply_style": reply_style,
+        }
 
     @function_tool()
     async def create_travel_application(
@@ -631,14 +639,14 @@ async def waypoint_agent(ctx: agents.JobContext):
 
         stt= deepgram.STT(
             model = "nova-3",
-            language="en",
+            language="multi",
         ),
         
         llm=create_llm(),
 
         tts = cartesia.TTS(
             model = "sonic-3.5",
-            voice = "47c38ca4-5f35-497b-b1a3-415245fb35e1",
+            voice = "30894953-bcce-41fe-892c-15ce19c843ff",
             language= "en",
         ),
 
