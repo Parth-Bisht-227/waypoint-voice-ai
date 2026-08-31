@@ -1,199 +1,214 @@
 # Waypoint Voice Lab
 
-Waypoint is a reliability-focused realtime voice assistant for a synthetic
-travel-application workflow. It combines streaming speech, LLM tool routing,
-deterministic business operations, a responsive browser UI, and per-session
-observability.
+Waypoint is a full-stack voice AI travel-support prototype. It combines a
+realtime browser call, multilingual speech, LLM tool use, a typed FastAPI
+backend, SQLite persistence, and per-session observability in one local
+reference implementation.
 
-> Probabilistic language handles the conversation. Deterministic code owns
-> business truth and side effects.
+> The model handles conversation and tool selection. Typed code and the backend
+> own validation, identifiers, persistent state, and mutation results.
 
-This repository is a local portfolio project, not a hosted service for real
-traveler data. Publishing its source on GitHub does not deploy or expose the
-local FastAPI, SQLite, LiveKit room, or provider credentials.
-
-The local V1 workflow is functionally complete and has been exercised through
-the custom browser UI with a recorded, full voice session.
+The application uses synthetic travel-support records. It does not submit
+government visa applications, search live airline inventory, take payments, or
+issue tickets.
 
 [Engineering case study](./project.md) ·
+[Project overview](./docs/PROJECT_OVERVIEW.md) ·
 [Architecture](./docs/ARCHITECTURE.md) ·
+[Contracts](./docs/CONTRACTS.md) ·
 [Local setup](./docs/LOCAL_DEVELOPMENT.md)
 
-## What the demo does
+## Capabilities
 
-- Joins a LiveKit room from a React browser client and streams microphone and
-  agent audio.
-- Transcribes speech with Deepgram, routes typed tools through Gemini with
-  Cerebras fallback, and speaks
-  responses with Cartesia.
-- Reads application status and missing documents from FastAPI and SQLite.
-- Prepares a travel-date change, waits for a later deterministic confirmation,
-  then performs one idempotent update.
-- Creates a human-support request only after the latest finalized user turn
-  explicitly asks for a person.
-- Sends ID-only refresh hints to the browser, which refetches authoritative
-  application data instead of trusting assistant prose.
-- Records latency, usage, tools, conversation state, and clean shutdown details
-  in ignored local session reports.
+- Run a realtime call through a React browser UI and LiveKit room.
+- Mute and unmute the existing published microphone track without reconnecting.
+- Transcribe English, Hindi, and code-switched speech with Deepgram Nova-3
+  multilingual STT.
+- Answer in English or switch Cartesia TTS to Hindi for Hindi/Hinglish replies.
+- Route conversation and tools through Gemini, with Cerebras as the configured
+  fallback before any response content or tool call has begun.
+- Create a synthetic Waypoint application after collecting and confirming a
+  destination and future travel date.
+- Read an existing application's status and missing-document list.
+- Prepare a travel-date change, ask for natural confirmation, and apply an
+  idempotent backend update.
+- Create a durable human-support request after the caller explicitly asks for
+  one.
+- Answer curated Japan tourist-visa questions for an Indian passport holder
+  residing and applying in India.
+- Publish ID-only refresh hints so the browser refetches authoritative FastAPI
+  data instead of trusting assistant prose.
+- Save local reports containing conversation, tool, provider-usage, latency,
+  state-transition, and shutdown evidence.
 
-A typical demo asks for an application status, checks missing documents,
-prepares a future travel-date change, confirms it once, observes the
-authoritative UI refresh, requests human support, and ends the call cleanly.
-The setup and verification commands are documented in
-[docs/LOCAL_DEVELOPMENT.md](./docs/LOCAL_DEVELOPMENT.md).
+The supported visa guidance is intentionally narrow and must be rechecked
+against the linked Embassy of Japan and VFS sources because requirements can
+change.
 
-## Architecture
+## System overview
 
-```mermaid
+~~~mermaid
 flowchart LR
-    User((Traveler)) <--> UI[React + TypeScript UI]
-    UI -->|POST /voice/token| Token[FastAPI token route]
+    Caller((Caller)) <--> UI[React + TypeScript UI]
+    UI -->|POST /voice/token| API[FastAPI]
     UI <--> LK[LiveKit room]
     LK <--> Agent[LiveKit Python agent]
-    Agent --> STT[Deepgram STT]
-    Agent --> LLM[Gemini with Cerebras fallback]
-    Agent --> TTS[Cartesia TTS]
-    Agent --> API[FastAPI application API]
+    Agent --> STT[Deepgram Nova-3 multi]
+    Agent --> LLM[Gemini → Cerebras fallback]
+    Agent --> TTS[Cartesia Sonic 3.5]
+    Agent -->|typed HTTP tools| API
     UI -->|authoritative reads| API
     API <--> DB[(SQLite)]
-    Agent --> FAQ[Curated FAQ JSON]
-    Agent -. ID-only refresh .-> UI
-```
+    Agent --> FAQ[Curated FAQ + Japan visa entries]
+    Agent -. canonical ID only .-> UI
+    Agent --> Reports[Ignored local session reports]
+~~~
 
 The browser never receives database credentials or reusable LiveKit secrets.
-The LLM never writes SQLite directly.
+The LLM never writes SQLite directly. The transcript and LiveKit data messages
+are presentation and notification channels, not sources of business truth.
 
-## Reliability boundaries
+## Important reliability boundaries
 
-| Failure mode | Deterministic boundary |
+| Concern | Current boundary |
 | --- | --- |
-| LLM applies a date too early | `apply_pending_travel_date_change` rejects unless a later finalized user turn explicitly confirms the prepared proposal |
-| User corrects or vetoes a date | Corrections require preparation again; veto language and replacement dates revoke confirmation |
-| Duplicate or uncertain mutation retry | The same pending idempotency key is reused and FastAPI records the result transactionally |
-| LLM invents application state | Current state comes from typed FastAPI tools; general answers come from a curated FAQ retriever |
-| Accidental human escalation | The tool rejects before interruption locking or HTTP unless the latest user turn explicitly requests a human and uses `user_request` |
-| Transcript or data message changes the card | LiveKit messages contain only a canonical ID; the browser validates them and refetches FastAPI |
-| Development tests touch real data | Backend tests use temporary SQLite databases initialized through FastAPI lifespan |
-| A call sounds correct but acts incorrectly | Session reports retain tool ordering, state, provider usage, latency, and shutdown reason for diagnosis |
+| Invented application facts | Status, dates, missing documents, created IDs, and handoff IDs come from typed FastAPI responses |
+| Invalid new application | FastAPI rejects blank destinations and non-future dates; SQLite allocates the next <code>APP###</code> ID transactionally |
+| Duplicate date update | The agent retains one idempotency key for the pending change and FastAPI stores the mutation result in the same transaction |
+| Premature mutation | Date changes use separate prepare and apply tools and the voice instructions require confirmation; this conversational sequencing is LLM-governed, while future-date and idempotency rules are deterministic |
+| Accidental handoff | The prompt exposes only <code>user_request</code> to the agent and requires an explicit request; FastAPI validates the record and creates the canonical handoff ID |
+| Untrusted UI updates | The agent sends only a validated application ID; React refetches FastAPI before updating the card |
+| Unsupported knowledge | One cached lexical retriever returns a compact curated answer or a no-result response |
+| Provider outage | LiveKit tries Gemini first and Cerebras second, with no retry after streamed content or a tool call begins |
+| Queued filler speech | Generic latency fillers were removed after reports showed they could play behind completed answers |
+| Hidden call failures | Session reports preserve the event and usage evidence needed to diagnose routing, interruption, latency, and shutdown behavior |
 
 ## Technology
 
 | Layer | Stack |
 | --- | --- |
-| Realtime transport | LiveKit Cloud and `livekit-agents` 1.7.0 |
-| Speech | Deepgram Nova-3 STT and Cartesia Sonic 3.5 TTS |
-| Reasoning/tool routing | Gemini `gemini-3.5-flash-lite`, with Cerebras `gpt-oss-120b` fallback |
-| Agent workflow | Python 3.11, typed tools, per-session deterministic state |
-| API and persistence | FastAPI, Pydantic, `aiosqlite`, SQLite |
+| Realtime transport | LiveKit Cloud, <code>livekit-agents</code> 1.7.0 |
+| Speech recognition | Deepgram Nova-3, <code>language="multi"</code> |
+| LLM/tool routing | Gemini <code>gemini-3.5-flash-lite</code>, Cerebras <code>gpt-oss-120b</code> fallback |
+| Speech synthesis | Cartesia Sonic 3.5, Parker voice, runtime English/Hindi language switching |
+| Agent workflow | Python 3.11, eight typed tools, per-session state |
+| API and persistence | FastAPI, Pydantic, <code>aiosqlite</code>, SQLite |
 | Frontend | React 19, TypeScript, Vite, LiveKit Client |
 | Verification | pytest, provider-backed agent-flow evals, Vitest, TypeScript build |
 
 ## Local quick start
 
-Prerequisites: Python 3.11, [`uv`](https://docs.astral.sh/uv/), Node.js,
+Prerequisites: Python 3.11, [uv](https://docs.astral.sh/uv/), Node.js,
 the LiveKit CLI, a LiveKit project, and provider credentials for Deepgram,
 Google Gemini, Cerebras, and Cartesia.
 
-```powershell
+~~~powershell
 git clone https://github.com/Parth-Bisht-227/waypoint-voice-ai.git
 Set-Location waypoint-voice-ai
 uv sync --locked
 npm ci --prefix frontend
+lk cloud auth
 Copy-Item agent/.env.example agent/.env.local
-```
+~~~
 
-Fill `agent/.env.local` locally. Never commit it or expose its values through
-`VITE_...` variables.
+The <code>lk cloud auth</code> step links the LiveKit CLI to a Cloud project and
+is needed only once per local CLI setup. Fill <code>agent/.env.local</code>
+locally with that project's server credentials and the speech/LLM provider
+keys. Never commit it or expose its values through a <code>VITE_...</code>
+variable.
 
-Start the three processes in separate terminals:
+Start three terminals from the repository root:
 
-```powershell
+~~~powershell
 uv run fastapi dev backend/app/main.py
-```
+~~~
 
-```powershell
+~~~powershell
 lk agent dev agent/agent.py
-```
+~~~
 
-```powershell
+~~~powershell
 npm run dev --prefix frontend
-```
+~~~
 
-Open the Vite URL, normally `http://127.0.0.1:5173`. The complete setup,
-troubleshooting, database reset, and test commands are in
-[docs/LOCAL_DEVELOPMENT.md](./docs/LOCAL_DEVELOPMENT.md).
+Open the Vite URL, normally <code>http://127.0.0.1:5173</code>. See
+[the local-development runbook](./docs/LOCAL_DEVELOPMENT.md) for configuration,
+smoke checks, troubleshooting, and database-reset guidance.
 
 ## Verification snapshot
 
 Snapshot date: 2026-08-31.
 
-| Suite | Latest result | Notes |
-| --- | --- | --- |
-| Provider-free Python | 79 passed | Backend, temporary DB isolation, token policy, signals, fallback safety, confirmation/handoff gates, retrieval, observability |
-| Provider-backed agent flows | 8 scenarios collected; live fallback call passed | Gemini handled primary turns, Cerebras handled fallback turns, and Gemini recovered later in the same session |
-| Frontend unit tests | 10 passed across 3 files | Token parsing, voice boundaries, transcript/state behavior, application validation |
-| TypeScript and Vite build | Passed | 45 modules; current main bundle is approximately 723 kB before optional code splitting |
+| Suite | Result |
+| --- | --- |
+| Provider-free Python | 80 passed |
+| Provider-backed agent flows | 8 scenarios collect successfully; run deliberately because they consume provider quota |
+| Frontend unit tests | 14 passed across 4 files |
+| TypeScript check | Passed |
+| Vite production build | Passed; 45 modules, approximately 724 kB main JS before optional splitting |
+| Live calls | English, Hindi/Hinglish switching, Gemini→Cerebras fallback, grounded visa answers, application creation, microphone controls, interruption, and clean shutdown exercised across focused calls |
 
-Real custom-UI and LiveKit-UI calls exercised microphone/STT, remote audio,
-transcript/state UI, application context changes, confirmed date updates, and
-clean disconnect/report writing. One diagnostic LiveKit-UI call measured about
-1.85 seconds median end-to-end latency, 0.47 seconds median steady-state LLM
-first-token latency, and 0.09 seconds median TTS first-audio latency. That is
-one call, not a benchmark; spoken-response duration remained the larger
-perceived cost.
+Run deterministic and provider-backed checks separately:
 
-Run deterministic and provider-backed checks separately so normal CI does not
-depend on provider quota:
-
-```powershell
-uv run python -m pytest backend/tests tests evals/test_application_ids.py evals/test_retrieval.py -v
-uv run python -m pytest evals/test_agent_flows.py -v
+~~~powershell
+uv run python -m pytest backend/tests tests evals/test_application_ids.py evals/test_retrieval.py -q
+uv run python -m pytest evals/test_agent_flows.py -q
 npm test --prefix frontend
 npm run check --prefix frontend
 npm run build --prefix frontend
-```
+~~~
 
-## Observability and failure analysis
+The latest successful multilingual validation report contained five normal
+<code>generate_reply</code> speech events and no generic
+<code>session.say()</code> filler events. It closed normally after participant
+disconnect. Live-call measurements are diagnostic samples, not provider
+benchmarks.
 
-Each completed agent session writes a formatted JSON report under the ignored
-`observability/reports/` directory. These reports exposed two otherwise hidden
-safety failures during development: an LLM attempted to apply a date in the
-same tool loop before confirmation, and another call attempted an unnecessary
-handoff during an incomplete date request. Both side effects are now refused
-by deterministic Python gates.
+## Representative workflow
 
-Reports can contain transcript content and should be treated as sensitive local
-artifacts. Do not commit or publish them without inspection.
+A representative end-to-end call can include:
+
+1. Ask for <code>APP004</code> status in English.
+2. Switch to Hinglish and ask for its missing documents.
+3. Ask what an Indian traveler should prepare for a Japan tourist visa.
+4. Switch back to English.
+5. Create a new synthetic application after confirming destination and date.
+6. Mute and unmute the microphone, then end the call.
+
+A separate mutation path can prepare a future travel-date change for an
+existing application, wait for confirmation, apply it once, and trigger an
+authoritative card refetch after FastAPI succeeds.
 
 ## Scope and limitations
 
-- All applications and destinations are synthetic.
-- Exact LLM wording/routing, STT accuracy, and network/media latency remain
-  provider-variable; deterministic tests are reported separately from live evals.
-- Authentication, per-application authorization, token rate limiting, origin
-  policy, TLS deployment, and report retention are intentionally not implemented.
-- The current fixed demo seed dates will eventually need refreshing.
-- Browser automation, narrow-layout accessibility verification, transcript
-  coalescing, and LiveKit bundle splitting are useful follow-ups, not blockers
-  for the recorded portfolio demo.
-- Prompt guidance makes application IDs intelligible, but deterministic TTS-only
-  formatting for consistently natural "A P P zero zero four" pronunciation is
-  deferred to V1.1.
+- All application data is synthetic and the runtime is intended for local use.
+- Hindi/Hinglish STT, code-switching, interruption detection, and pronunciation
+  remain provider- and microphone-dependent.
+- Language switching is explicit at runtime; tool arguments and stored data
+  remain canonical English values.
+- Visa coverage is limited to short-term Japan tourism for the documented India
+  scenario. There is no live web search.
+- Confirmation and explicit-handoff intent are prompt/tool-flow behavior, not
+  user authentication or a general authorization system.
+- There is no airline inventory, pricing, booking, payment, upload, cancellation,
+  government submission, or live human transfer.
+- The API has no login, per-application authorization, rate limiting, production
+  TLS/origin policy, or report-retention policy.
+- Session reports may contain transcript content and must be treated as
+  sensitive local artifacts.
+- The large initial LiveKit frontend bundle and automated browser end-to-end
+  testing remain optional engineering follow-ups.
 
-Do not expose this local V1 as a public service without authentication,
-authorization, TLS, origin controls, rate limits, provider secret management,
-and session-report retention controls.
-
-The source repository may still be public and continue evolving through
-branches and pull requests. The author has confirmed ownership of the generated
-UI inspiration asset, and the source is licensed under MIT. Repeat the final
-secret/generated-artifact scan before changing visibility.
+The prototype should not be exposed as a public service without authentication,
+authorization, secure deployment, abuse controls, secret management, and a
+privacy/retention design.
 
 ## Documentation
 
 - [Engineering case study](./project.md)
+- [Project overview and documentation map](./docs/PROJECT_OVERVIEW.md)
 - [Architecture and trust boundaries](./docs/ARCHITECTURE.md)
-- [API, event, and persistence contracts](./docs/CONTRACTS.md)
+- [API, event, persistence, and language contracts](./docs/CONTRACTS.md)
 - [Local development and troubleshooting](./docs/LOCAL_DEVELOPMENT.md)
 
 ## License

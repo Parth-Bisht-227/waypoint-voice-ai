@@ -1,286 +1,348 @@
 # Architecture
 
-## 1. Architectural goal
+## 1. Goal
 
-Waypoint separates natural conversation from trusted business operations.
+Waypoint connects probabilistic voice conversation to deterministic application
+services without making the transcript or LLM the source of business truth.
 
-- The voice and language-model layer interprets what the traveler means.
-- The backend validates operations and owns persistent application state.
-- The frontend presents realtime voice state and independently reads authoritative application data.
-- The pixel-art world is decorative and never represents tool execution, confirmations, or business progress.
+- The agent interprets speech, manages the conversation, and selects tools.
+- FastAPI validates requests and owns persistent state.
+- SQLite generates or stores canonical application and handoff records.
+- The React client owns browser media and refetches authoritative data.
+- Curated local knowledge grounds general and Japan visa answers.
+- Session reports make provider and conversation behavior inspectable.
 
-This is a strong V1 shape because each layer has one clear responsibility and the unreliable parts of a voice conversation are prevented from silently becoming business truth.
+## 2. Current topology
 
-## 2. Current system topology
-
-```mermaid
+~~~mermaid
 flowchart TB
-    User((Traveler))
+    User((User))
 
-    subgraph Web["Browser — Vite, React, TypeScript"]
+    subgraph Browser["Browser — Vite, React, TypeScript"]
         Screen[WaypointScreen]
         VoiceHook[useVoiceSession]
-        VoiceController[LiveKitSessionController]
+        Controller[LiveKitSessionController]
         AppHook[useApplication]
-        ApiAdapter[Typed API and domain adapters]
+        Controls[Talk / Mute / End]
         Canvas[PixelJourneyCanvas]
     end
 
-    subgraph Realtime["Realtime voice plane"]
-        TokenEndpoint["POST /voice/token<br/>short-lived room token"]
+    subgraph Voice["Realtime voice plane"]
         Room[LiveKit room]
-        Agent["waypoint-agent<br/>LiveKit AgentSession"]
-        STT[Deepgram STT]
-        LLM[Gemini LLM<br/>Cerebras fallback]
-        TTS[Cartesia TTS]
+        Agent[waypoint-agent]
+        STT[Deepgram Nova-3 multi]
+        LLM[Gemini → Cerebras fallback]
+        TTS[Cartesia Sonic 3.5]
     end
 
-    subgraph Business["Deterministic business plane"]
+    subgraph Business["Business and knowledge plane"]
         API[FastAPI]
         DB[(SQLite)]
-        FAQ[knowledge/faqs.json]
+        Knowledge[knowledge/faqs.json]
     end
 
-    Reports["observability/reports/*.json<br/>ignored local artifacts"]
+    Reports[observability/reports/*.json]
 
     User <--> Screen
-    Screen --> VoiceHook --> VoiceController
-    Screen --> AppHook --> ApiAdapter --> API
-    Canvas -. "decorative only" .-> Screen
-
-    VoiceController -->|"secure token request"| TokenEndpoint
-    TokenEndpoint -->|"short-lived credentials + dispatch"| VoiceController
-    VoiceController <--> Room <--> Agent
+    Screen --> VoiceHook --> Controller
+    Screen --> AppHook --> API
+    Screen --> Controls
+    Canvas -. decorative only .-> Screen
+    Controller -->|short-lived token| API
+    Controller <--> Room <--> Agent
     Agent --> STT
     Agent --> LLM
     Agent --> TTS
-    Agent -->|HTTP function tools| API
-    Agent --> FAQ
+    Agent -->|typed tools| API
+    Agent --> Knowledge
     Agent --> Reports
     API <--> DB
+    Agent -. canonical ID only .-> Controller
+~~~
 
-```
+## 3. Runtime planes
 
-The browser, backend, token service, and named agent dispatch are implemented. Human-operated calls through both the custom browser UI and LiveKit's UI exercised microphone/STT, agent audio and state, transcript delivery, application-card refetch, confirmed mutation, end-call cleanup, session restart, and report persistence. Remaining UI acceptance work is limited to a focused narrow viewport, keyboard-only, reduced-motion, and autoplay-fallback pass.
+### 3.1 Realtime conversation
 
-## 3. Three intentionally separate planes
+LiveKit transports the published microphone track, remote agent audio,
+participant attributes, text streams, and application notifications.
 
-### 3.1 Voice and conversation plane
-
-LiveKit transports microphone audio, remote agent audio, participant attributes, transcription streams, and structured ID-only application messages. The Python agent connects provider services into this pipeline:
-
-```mermaid
+~~~mermaid
 flowchart LR
-    Mic[Traveler microphone] --> LKIn[LiveKit room]
-    LKIn --> STT[Deepgram transcription]
-    STT --> LLM[Gemini reasoning and tool choice<br/>Cerebras fallback]
-    LLM --> Tool[Typed function tool]
-    Tool --> API[FastAPI]
-    API --> Tool
-    Tool --> LLM
-    LLM --> TTS[Cartesia speech]
-    TTS --> LKOut[LiveKit room]
-    LKOut --> Speaker[Browser speaker]
-```
+    Mic[Microphone] --> RoomIn[LiveKit room]
+    RoomIn --> STT[Deepgram STT]
+    STT --> LLM[Gemini / Cerebras]
+    LLM --> Tool[Typed tool]
+    Tool --> API[FastAPI or local retriever]
+    API --> Tool --> LLM
+    LLM --> TTS[Cartesia TTS]
+    TTS --> RoomOut[LiveKit room]
+    RoomOut --> Speaker[Browser audio]
+~~~
 
-Silero VAD determines whether speech is present. LiveKit's turn detector decides whether the user's conversational turn has ended. The agent publishes its official state through the `lk.agent.state` participant attribute; the frontend maps that state to listening, thinking, speaking, and related UI labels.
+Silero VAD answers whether voice-like audio is present. LiveKit's turn detector
+decides whether a conversational turn has ended. The browser derives simple UI
+states from LiveKit transport state and the official
+<code>lk.agent.state</code> participant attribute.
 
-Preemptive LLM generation is currently disabled. This gives up a small speculative-latency opportunity in exchange for avoiding discarded provider requests when final STT text arrives in multiple chunks; the endpointing bounds are unchanged.
+Fixed endpointing uses a 0.6-second minimum and 2.5-second maximum delay.
+Preemptive generation is disabled to avoid discarded provider work on cancelled
+turns.
 
-The small `create_llm` helper in `agent.py` fixes the provider order as Gemini followed by Cerebras. LiveKit's fallback adapter moves to Cerebras without retrying Gemini and never retries after streamed text or a tool call has begun, preventing duplicate speech and durable actions.
+### 3.2 Business data
 
-### 3.2 Business-data plane
+Both the agent and browser call FastAPI. Only FastAPI reads or writes SQLite.
 
-Application data travels through ordinary typed HTTP calls. Both the agent and frontend read from FastAPI, and only FastAPI writes SQLite.
-
-```mermaid
+~~~mermaid
 flowchart LR
-    AgentTool[Agent function tool] --> API[FastAPI validation]
-    ReactAdapter[React typed API adapter] --> API
+    AgentTool[Agent HTTP tool] --> API[FastAPI]
+    ReactAdapter[React typed adapter] --> API
     API <--> DB[(SQLite)]
     API --> AgentTool
-    API --> ReactAdapter
-    ReactAdapter --> Card[ApplicationCard]
-```
+    API --> ReactAdapter --> Card[Application card]
+~~~
 
-The transcript is presentation data only. It is not parsed to obtain an application ID, date, status, or document list for the card.
+Transcript text is never parsed into the card's application ID, date, status,
+or missing documents.
 
-### 3.3 Decorative visual plane
+### 3.3 Knowledge
 
-`PixelJourneyCanvas` owns its own animation loop. It draws stars, clouds, a plane, layered silhouettes, ground, and an original traveler into a low-resolution canvas that is enlarged without smoothing.
+General Waypoint policies and curated Japan visa guidance share one compact JSON
+corpus and one cached lexical retriever. This is intentionally simpler than a
+vector database:
 
-The loop is isolated from voice and application state. It uses refs and `requestAnimationFrame`, pauses when the document is hidden, supports a manual pause button, redraws on resize, and renders a static frame when `prefers-reduced-motion: reduce` is active.
+1. normalize and tokenize the query;
+2. enforce required or exclusive query terms;
+3. score exact question, phrase, token, and curated keyword overlap;
+4. return one compact answer plus optional source metadata;
+5. return no result below the threshold.
 
-This isolation is deliberate: a plane passing or a traveler walking must never imply that a request is processing or that a mutation succeeded.
+The LLM explains only the returned information. It does not use live web search.
 
-## 4. Frontend composition and ownership
+### 3.4 Decorative UI
 
-```mermaid
+<code>PixelJourneyCanvas</code> owns an isolated animation loop. It has no
+connection to tool execution or business progress. It pauses on hidden tabs,
+supports a visible pause button, responds to resize, and draws a static frame
+under reduced-motion preferences.
+
+## 4. Browser ownership
+
+~~~mermaid
 flowchart TB
     Screen[WaypointScreen]
-    Screen --> Canvas[PixelJourneyCanvas]
-    Screen --> Header[WaypointHeader]
     Screen --> Card[ApplicationCard]
     Screen --> Dock[VoiceDock]
-    Dock --> Orb[SpeakingOrb]
+    Screen --> Canvas[PixelJourneyCanvas]
     Dock --> Controls[SessionControls]
-    Dock --> Drawer[TranscriptDrawer]
-
+    Dock --> Orb[SpeakingOrb]
+    Dock --> Transcript[TranscriptDrawer]
     Screen --> AppHook[useApplication]
     Screen --> VoiceHook[useVoiceSession]
     VoiceHook --> Controller[LiveKitSessionController]
-    Controller --> Level[RemoteAudioLevelMonitor]
-    Controller --> Transcript[Transcript reducer]
-    Controller --> Signal[Application-event validator]
-```
+    Controller --> Room[Room + microphone + remote audio]
+~~~
 
-| Layer | Owns | Does not own |
-| --- | --- | --- |
-| `WaypointScreen` | Current application ID and composition of the page | LiveKit resources or database records |
-| `useApplication` | Loading, ready, not-found, error, abort, and refetch state | Transcript interpretation |
-| API/domain adapters | Runtime validation and snake_case-to-domain conversion | React presentation |
-| `useVoiceSession` | Stable React subscription to the controller snapshot | Canvas animation |
-| `LiveKitSessionController` | Room, microphone, remote audio, events, transcript, cleanup | Application business fields |
-| UI components | Accessible controls and presentation | Network or persistence logic |
-| `PixelJourneyCanvas` | Decorative animation only | Session or application state |
+| Layer | Owns |
+| --- | --- |
+| <code>WaypointScreen</code> | Page composition and current application ID |
+| <code>useApplication</code> | Loading, ready, not-found, error, abort, and refetch state |
+| API/domain adapters | Runtime validation and wire-to-domain conversion |
+| <code>useVoiceSession</code> | Stable React subscription and controller actions |
+| <code>LiveKitSessionController</code> | Room, microphone track, audio, events, transcript, mute state, cleanup |
+| UI components | Accessible controls and presentation |
+| <code>PixelJourneyCanvas</code> | Decorative motion only |
 
-### Application-card read flow
+### Voice-session lifecycle
 
-At load, the current application ID defaults to `VITE_DEFAULT_APPLICATION_ID`, or `APP001` when that variable is absent. The frontend issues both reads in parallel and adapts them into one `ApplicationSnapshot`.
-
-```mermaid
-sequenceDiagram
-    participant Screen as WaypointScreen
-    participant Hook as useApplication
-    participant API as Typed API layer
-    participant FastAPI
-    participant DB as SQLite
-
-    Screen->>Hook: currentApplicationId
-    Hook->>API: getApplicationSnapshot(id)
-    par Basic record
-        API->>FastAPI: GET /applications/{id}
-        FastAPI->>DB: SELECT application
-        DB-->>FastAPI: row
-        FastAPI-->>API: typed JSON
-    and Missing documents
-        API->>FastAPI: GET /applications/{id}/missing-documents
-        FastAPI->>DB: SELECT documents
-        DB-->>FastAPI: rows
-        FastAPI-->>API: typed JSON
-    end
-    API->>API: validate IDs, status, date, and fields
-    API-->>Hook: ApplicationSnapshot
-    Hook-->>Screen: ready state
-```
-
-The hook aborts stale requests and ignores late results. It also exposes explicit loading, not-found, and service-error states.
-
-## 5. Browser voice-session lifecycle
-
-The browser implementation is a resource-owning controller outside normal React render cycles. React subscribes to immutable snapshots using `useSyncExternalStore`.
-
-```mermaid
+~~~mermaid
 sequenceDiagram
     actor User
     participant UI as SessionControls
-    participant Controller as LiveKitSessionController
-    participant Browser as Browser media APIs
+    participant C as LiveKitSessionController
     participant API as FastAPI
     participant Room as LiveKit room
     participant Agent as waypoint-agent
 
     User->>UI: Talk to Waypoint
-    UI->>Controller: start()
-    Controller->>Browser: createLocalAudioTrack()
-    Browser-->>Controller: microphone track
-    Controller->>API: POST /voice/token
+    UI->>C: start()
+    C->>C: createLocalAudioTrack()
+    C->>API: POST /voice/token
+    API-->>C: URL + scoped token
+    C->>Room: connect and publish microphone
+    Room->>Agent: named dispatch
+    Agent-->>Room: state, transcript, audio, ID hints
+    Room-->>C: realtime events
 
-    API-->>Controller: server URL and 10-minute room token
-    Controller->>Room: connect(url, token)
-    Controller->>Room: publish microphone
-    Room->>Agent: explicit named dispatch
-    Room-->>Controller: agent state, transcript, remote audio
-    Room->>Agent: microphone audio and room events
-    Agent-->>Room: voice, state, transcription, ID-only hints
-    Controller-->>UI: connected snapshot and authoritative refetch
+    User->>UI: Mute / Unmute
+    UI->>C: toggleMicrophoneMute()
+    C->>C: mute() or unmute() same track
 
     User->>UI: End call
-    UI->>Controller: end()
-    Controller->>Room: unpublish and disconnect
-    Controller->>Browser: stop tracks and analyser
-    Controller-->>UI: disconnected snapshot
-```
+    UI->>C: end()
+    C->>Room: unpublish and disconnect
+    C->>C: stop track, audio, analyser, listeners
+~~~
 
-Important resource-safety behavior already exists:
+Concurrent start/end operations are serialized. Token requests can be aborted.
+Failure and disconnect paths stop tracks, detach audio and listeners, clear
+mute state, and leave a retryable UI state. Browser autoplay blocking exposes
+an <code>Enable audio</code> action.
 
-- concurrent start/end requests are serialized;
-- an in-flight token request is abortable;
-- every failure path clears the connecting state;
-- microphone tracks are stopped after failure or disconnect;
-- LiveKit listeners and transcription handlers are unregistered;
-- remote audio elements and analyser resources are detached;
-- reconnecting and unexpected disconnects have explicit UI states;
-- browser autoplay blocking surfaces an `Enable audio` control.
+## 5. Provider construction and recovery
 
-## 6. Transcript and audio presence
+The agent creates one fixed LLM chain:
 
-The frontend consumes LiveKit's `lk.transcription` text stream. It accepts only the local participant as `user` and a LiveKit agent participant as `assistant`. A stable segment ID lets interim text be updated in place, and a finalized segment cannot be replaced by a late interim segment.
+~~~text
+Gemini gemini-3.5-flash-lite
+        ↓ eligible failure before output/tool execution
+Cerebras gpt-oss-120b
+~~~
 
-Remote agent audio is attached to a hidden audio element. `createAudioAnalyser()` samples only that remote agent track every 80 ms, normalizes the value to `0..1`, and suppresses very small changes before updating React. `SpeakingOrb` receives only the amplitude and UI state, so it can react to sound without learning anything about tools or business operations.
+The fallback adapter uses:
 
-## 7. Agent tools and deterministic confirmation
+- a 12-second attempt timeout;
+- zero per-provider retries;
+- a short retry interval internal to the adapter;
+- no provider switch once chunks or tool calls have been sent.
 
-The agent exposes six tools:
+The same chain is used by the provider-backed evals. The STT, TTS, tools,
+backend, and frontend do not change when fallback occurs.
 
-1. `get_application_status`
-2. `get_missing_documents`
-3. `prepare_travel_date_change`
-4. `apply_pending_travel_date_change`
-5. `handoff_to_human`
-6. `search_support_knowledge`
+A separate error listener speaks a short retry request only when the entire
+configured LLM source emits a terminal non-recoverable error. Generic latency
+fillers are not scheduled.
 
-Application IDs are normalized to the current `APP` plus three-digit format before an application tool is called. General support questions use the local FAQ retriever; application-specific questions use FastAPI.
+## 6. Multilingual session
 
-### Travel-date mutation state machine
+The speech pipeline starts as:
 
-```mermaid
+~~~text
+Deepgram: nova-3, language=multi
+Cartesia: sonic-3.5, Parker voice, language=en
+Session state: active_language=en
+~~~
+
+When the caller explicitly asks for Hindi/Hinglish or clearly begins a complete
+request in it:
+
+1. the LLM calls <code>set_spoken_language(language="hi")</code>;
+2. the tool updates Cartesia with <code>language="hi"</code>;
+3. session state becomes <code>hi</code>;
+4. the tool returns a natural-Hinglish reply style;
+5. the LLM keeps common travel terms in English/Latin script.
+
+The reverse call switches Cartesia and state back to English. Tool names,
+arguments, dates, IDs, destinations, and stored values remain canonical
+regardless of spoken language.
+
+Deepgram code-switching is probabilistic. A VAD interruption with no usable
+transcript may be classified as a false interruption and resumed by LiveKit.
+
+## 7. Agent tools
+
+The final agent exposes eight tools:
+
+1. <code>set_spoken_language</code>
+2. <code>create_travel_application</code>
+3. <code>get_application_status</code>
+4. <code>get_missing_documents</code>
+5. <code>prepare_travel_date_change</code>
+6. <code>apply_pending_travel_date_change</code>
+7. <code>handoff_to_human</code>
+8. <code>search_support_knowledge</code>
+
+Application identifiers are normalized into the current
+<code>APP###</code> form before existing-record operations.
+
+### New application
+
+~~~mermaid
+sequenceDiagram
+    actor User
+    participant Agent
+    participant API as FastAPI
+    participant DB as SQLite
+    participant UI as React
+
+    User->>Agent: Create an application
+    Agent->>User: Ask only for missing destination/date
+    Agent->>User: Summarize and request confirmation
+    User->>Agent: Natural confirmation
+    Agent->>API: POST /applications
+    API->>DB: BEGIN IMMEDIATE, allocate APP number, INSERT
+    DB-->>API: committed record
+    API-->>Agent: canonical application
+    Agent-->>UI: ID-only application_context
+    UI->>API: authoritative GETs
+~~~
+
+The backend rejects a blank destination, today/past date, extra request fields,
+or exhausted three-digit ID capacity. New records begin in
+<code>processing</code>.
+
+### Travel-date change
+
+~~~mermaid
 stateDiagram-v2
-    [*] --> NoPendingChange
-    NoPendingChange --> AwaitingConfirmation: prepare valid future date
-    AwaitingConfirmation --> AwaitingConfirmation: vague response
-    AwaitingConfirmation --> AwaitingConfirmation: corrected date / prepare again
-    AwaitingConfirmation --> Applying: later explicit confirmation
-    Applying --> NoPendingChange: backend confirms success
-    Applying --> AwaitingConfirmation: timeout or uncertain failure
-```
+    [*] --> NoPending
+    NoPending --> Prepared: valid application + future date
+    Prepared --> Prepared: corrected proposal
+    Prepared --> Applying: LLM interprets later confirmation
+    Applying --> NoPending: backend success
+    Applying --> Prepared: timeout or uncertain result
+~~~
 
-`prepare_travel_date_change` verifies the application and future date but does not mutate the backend. It stores the canonical application ID, date, and a generated idempotency key in per-call `WaypointSessionState`.
+Preparation verifies the application and stores a canonical ID, proposed date,
+and idempotency key in <code>WaypointSessionState</code>. Apply refuses to run
+without that pending state. The prompt requires a later natural confirmation;
+there is no separate transcript phrase classifier.
 
-A separate deterministic listener checks each later completed user turn with a bounded voice-native grammar. Short affirmative or action-bearing phrases can confirm, while negative/correction language, question-shaped input, and any replacement date veto confirmation. Every later user turn recomputes the flag, so “Wait” revokes a prior “Yes.” The LLM instruction alone is not trusted to authorize the mutation. `apply_pending_travel_date_change` refuses to call the backend without both pending state and deterministic confirmation.
+The backend transaction checks idempotency, verifies the application, updates
+the date, stores the serialized result, and commits. A timeout leaves pending
+state intact so a retry reuses the same key.
 
-When applying, the agent disables interruption around the durable mutation. The backend executes the update and idempotency-record insert in one transaction. On a timeout, pending state and the same idempotency key are retained so a retry cannot create a second logical operation.
+### Human support
 
-After a successful authoritative read or preparation, the agent may publish an `application_context` hint containing only the canonical ID. Only a confirmed successful PATCH produces `application_updated`. The frontend validates the agent, topic, exact keys, type, and ID before refetching FastAPI; signal delivery never carries business fields or changes the authoritative tool result.
+The voice tool accepts only <code>reason_code="user_request"</code>, and its
+instructions require an explicit request for a person. FastAPI validates the
+application and creates a durable <code>HOF-...</code> request with status
+<code>requested</code>. This is not a live transfer.
 
-### Human-handoff gate
+## 8. Application notifications
 
-The backend retains all supported handoff reason codes, but the V1 voice agent
-is intentionally opt-in: only an explicit request in the latest finalized user
-turn can authorize `handoff_to_human`, and the agent must use `user_request`.
-The check runs before ID normalization, interruption locking, or HTTP. An
-incomplete date, a correction, confusion, or an attempted automatic reason
-therefore produces no POST even if the LLM selects the tool incorrectly.
+After selected successful application tools, the agent publishes on
+<code>waypoint.application</code>:
 
-## 8. Backend and persistence
+~~~json
+{
+  "type": "application_context",
+  "application_id": "APP004"
+}
+~~~
 
-FastAPI initializes SQLite during application lifespan startup. The database lives at `backend/waypoint.db`, is ignored by Git, and contains four tables:
+or:
 
-```mermaid
+~~~json
+{
+  "type": "application_updated",
+  "application_id": "APP004"
+}
+~~~
+
+The browser accepts only an agent sender, the expected topic, an exact two-key
+payload, a known type, and a valid ID. It then refetches FastAPI. Business
+fields never travel in the notification.
+
+## 9. Persistence
+
+FastAPI initializes four SQLite tables:
+
+~~~mermaid
 erDiagram
     APPLICATIONS ||--o{ MISSING_DOCUMENTS : has
-    APPLICATIONS ||--o{ HANDOFF_REQUESTS : receives
-    APPLICATIONS ||--o{ IDEMPOTENCY_RECORDS : targeted_by
+    APPLICATIONS ||..o{ HANDOFF_REQUESTS : receives
+    APPLICATIONS ||..o{ IDEMPOTENCY_RECORDS : referenced_by
 
     APPLICATIONS {
         text application_id PK
@@ -307,41 +369,33 @@ erDiagram
         text status
         text created_at
     }
-```
+~~~
 
-Seed inserts use `INSERT OR IGNORE`, so they create initial synthetic records without overwriting changes in an existing local database.
+<code>missing_documents</code> uses a composite primary key over
+<code>application_id</code> and <code>document_code</code>. Its application ID
+and the one in <code>handoff_requests</code> are declared foreign keys.
+<code>idempotency_records.application_id</code> is a logical reference used by
+the update workflow, but the current SQLite schema does not declare it as a
+foreign key.
 
-## 9. Grounding and observability
+Seed inserts use <code>INSERT OR IGNORE</code>, so restarting does not overwrite
+existing local mutations.
 
-The FAQ retriever loads `knowledge/faqs.json` once per agent process and applies deterministic lexical scoring: exact-question match, phrase containment, question-token overlap, and curated keyword overlap. It intentionally returns no result below a minimum score so the agent can say it lacks grounded information instead of guessing.
+## 10. Observability and boundaries
 
-Session observers log available per-turn latency metrics and cumulative model usage. At session end, the agent writes a timestamped, sanitized JSON report under `observability/reports/`. That directory is ignored by Git. The browser transcript itself is not persisted by the React app, but the server-side session report may contain conversation information; production retention and access rules are therefore still required.
+Session observers log available turn metrics and cumulative provider usage.
+When a session ends, the report writer stores formatted JSON under the ignored
+<code>observability/reports/</code> directory. Reports may contain transcript
+content and require private handling.
 
-## 10. V1 assessment and boundaries
+The architecture deliberately does not provide:
 
-### What works well
+- real visa adjudication or live requirements;
+- airline search, booking, pricing, payment, or ticketing;
+- authentication or per-application authorization;
+- production rate limiting, TLS/origin policy, secret deployment, or retention;
+- deterministic guarantees about LLM wording, multilingual STT, TTS accent, or
+  interruption detection.
 
-- Business truth has a single owner: FastAPI and SQLite.
-- Transcript text is isolated from trusted application state.
-- The mutation workflow adds deterministic confirmation on top of the LLM prompt.
-- Idempotency and transaction boundaries make retries safer.
-- LiveKit lifecycle code is outside component render logic and has explicit cleanup.
-- Typed runtime adapters reject malformed backend, token, and data-message payloads.
-- Decorative animation is isolated and motion-aware.
-- Focused tests cover the most important trust boundaries.
-
-Waypoint's V1 architecture gives each layer a clear responsibility:
-
-- FastAPI and SQLite own business truth and durable mutations.
-- The agent handles conversation and tool selection but cannot authorize unsafe
-  mutations by itself.
-- The browser presents realtime state while refetching authoritative data from
-  FastAPI.
-- Observability records enough evidence to diagnose ordering, latency, usage,
-  and shutdown behavior.
-- Decorative UI animation remains isolated from business progress.
-
-The project intentionally remains a local synthetic-data prototype. Future work
-may include stronger browser automation, additional accessibility QA, more
-natural identifier pronunciation, response-length tuning, bundle optimization,
-and production security controls if public deployment is ever required.
+These boundaries keep the local prototype understandable while still
+demonstrating a complete realtime, tool-using, persistent voice application.

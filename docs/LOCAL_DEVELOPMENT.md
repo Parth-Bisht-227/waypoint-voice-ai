@@ -1,54 +1,50 @@
 # Local development runbook
 
+Snapshot: 2026-08-31.
+
 ## 1. Prerequisites
 
-The project expects:
+- Python <code>>=3.11,<3.12</code>
+- <code>uv</code>
+- Node.js and npm suitable for Vite 8
+- LiveKit CLI (<code>lk</code>)
+- a LiveKit project or local server
+- Deepgram, Google Gemini, Cerebras, and Cartesia credentials for live calls
 
-- Python `>=3.11,<3.12`;
-- `uv` for the locked Python environment;
-- Node.js and npm suitable for Vite 8;
-- the LiveKit CLI (`lk`) for agent development;
-- a LiveKit project or local LiveKit server;
-- provider credentials for Deepgram, Google Gemini, Cerebras, and Cartesia when running the real agent.
+The final documentation pass used <code>uv 0.9.15</code> and Node
+<code>v22.22.3</code>. These are verified examples, not strict minimums.
 
-The documentation audit passed with:
-
-```text
-uv 0.9.15
-Node v22.22.3
-```
-
-Those are verified local versions, not strict minimum versions.
-
-## 2. Install dependencies
+## 2. Install
 
 From the repository root:
 
-```powershell
+~~~powershell
 uv sync --locked
-```
+npm ci --prefix frontend
+~~~
 
-Then install the frontend from its lockfile:
+## 3. Configure
 
-```powershell
-Set-Location frontend
-npm ci
-Set-Location ..
-```
+For LiveKit Cloud, link the CLI to the project used by the local worker:
 
-## 3. Configure local environment
+~~~powershell
+lk cloud auth
+lk project list
+~~~
 
-The agent loads an ignored file at `agent/.env.local`. The FastAPI token service reads process environment first and falls back to the same ignored file for the three `LIVEKIT_...` values, so one local server-side file can configure both processes.
+If multiple projects are linked, select the intended default with
+<code>lk project set-default "&lt;project-name&gt;"</code>. This CLI setup is
+machine-local and normally needs to be completed only once.
 
-Start from the safe tracked template:
+Copy the safe template:
 
-```powershell
+~~~powershell
 Copy-Item agent/.env.example agent/.env.local
-```
+~~~
 
-Fill in the copied values locally. Its shape is:
+Fill the ignored local file:
 
-```dotenv
+~~~dotenv
 LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=
 LIVEKIT_API_SECRET=
@@ -57,224 +53,240 @@ GOOGLE_API_KEY=
 CEREBRAS_API_KEY=
 CARTESIA_API_KEY=
 BACKEND_BASE_URL=http://127.0.0.1:8000
-```
+~~~
 
-Never commit the file or paste its values into frontend code. `LIVEKIT_API_SECRET` and provider keys must never use a `VITE_` prefix because Vite variables are browser-visible.
+The agent loads <code>agent/.env.local</code>. The FastAPI token route reads
+process environment first and then the same ignored file for the three
+<code>LIVEKIT_...</code> values.
 
-The optional frontend default can be placed in `frontend/.env.local`:
+Never commit credentials or put them in a <code>VITE_...</code> variable.
 
-```dotenv
+Optional frontend file <code>frontend/.env.local</code>:
+
+~~~dotenv
 VITE_DEFAULT_APPLICATION_ID=APP001
-```
+~~~
 
-If omitted, the frontend already defaults to `APP001`.
+## 4. Start the application
 
-## 4. Start the local processes
+Use three terminals from the repository root.
 
-Use separate terminals from the repository root.
+### FastAPI
 
-### Terminal 1 — FastAPI
-
-```powershell
+~~~powershell
 uv run fastapi dev backend/app/main.py
-```
+~~~
 
-Expected addresses:
+- API: <code>http://127.0.0.1:8000</code>
+- Swagger: <code>http://127.0.0.1:8000/docs</code>
 
-- API: `http://127.0.0.1:8000`
-- Swagger UI: `http://127.0.0.1:8000/docs`
+Startup creates or reuses <code>backend/waypoint.db</code> and inserts any
+missing seeds.
 
-Startup creates or reuses `backend/waypoint.db` and inserts missing seed records.
+### LiveKit agent
 
-### Terminal 2 — LiveKit agent
-
-```powershell
+~~~powershell
 lk agent dev agent/agent.py
-```
+~~~
 
-The command runs with auto-reload and registers the named agent:
+The worker registers as <code>waypoint-agent</code> and waits for named room
+dispatch.
 
-```text
-waypoint-agent
-```
+### React frontend
 
-The agent still needs a LiveKit room/job dispatch before it handles a call.
+~~~powershell
+npm run dev --prefix frontend
+~~~
 
-### Terminal 3 — Vite frontend
+Open <code>http://127.0.0.1:5173</code>. Vite forwards
+<code>/api/*</code> to FastAPI and removes the prefix.
 
-```powershell
-Set-Location frontend
-npm run dev
-```
+## 5. Expected behavior
 
-Open:
+Before a call:
 
-```text
-http://127.0.0.1:5173
-```
+- the pixel-art page renders;
+- the application card reads <code>APP001</code> unless configured otherwise;
+- loading, not-found, retry, and unavailable states are supported;
+- the transcript is empty and the voice session is disconnected.
 
-Vite proxies `/api/*` to FastAPI on port `8000` and strips `/api` before forwarding.
+After pressing **Talk to Waypoint**:
 
-## 5. Expected behavior in the current snapshot
+1. the browser requests microphone permission;
+2. FastAPI returns a unique room-scoped 10-minute token;
+3. the browser connects and publishes one microphone track;
+4. LiveKit dispatches <code>waypoint-agent</code>;
+5. the UI receives agent state, transcript, remote audio, and validated
+   application-ID hints.
 
-With FastAPI, `waypoint-agent`, and Vite running:
+While connected:
 
-- the pixel-art screen renders;
-- the application card loads the live `APP001` SQLite-backed record;
-- application errors have loading, not-found, retry, and unavailable UI states;
-- the transcript starts empty;
-- the voice link shows disconnected/ready.
+- Mute/Unmute toggles the existing track without reconnecting;
+- English is the initial spoken language;
+- a clear Hindi/Hinglish request causes the agent to switch Cartesia to Hindi
+  and continue in natural Hinglish;
+- switching back to English updates the same session;
+- application hints trigger authoritative FastAPI refetches;
+- normal turns do not schedule generic spoken latency fillers.
 
-When `Talk to Waypoint` is pressed:
-
-1. the browser asks for microphone permission;
-2. the frontend posts to `/api/voice/token`;
-3. Vite forwards the request to `/voice/token` on FastAPI;
-4. FastAPI returns a unique 10-minute, room-scoped token with explicit `waypoint-agent` dispatch;
-5. the browser joins, publishes only its microphone, and receives agent state, audio, transcript, and validated application hints;
-6. application hints trigger an authoritative FastAPI refetch rather than carrying business fields.
-
-If configuration or connection fails, the UI shows a retryable error and releases the microphone/partial LiveKit resources.
+End Call disconnects the room, stops the microphone, detaches audio/analyser
+resources, unregisters listeners, and resets mute state.
 
 ## 6. API smoke checks
 
-With FastAPI running, these PowerShell commands should return JSON:
+With FastAPI running:
 
-```powershell
+~~~powershell
 Invoke-RestMethod http://127.0.0.1:8000/applications/APP001
-```
+~~~
 
-```powershell
+~~~powershell
 Invoke-RestMethod http://127.0.0.1:8000/applications/APP001/missing-documents
-```
+~~~
 
-To verify token issuance without printing the signed credential:
+Verify token metadata without printing the signed token:
 
-```powershell
+~~~powershell
 $voiceToken = Invoke-RestMethod -Method Post http://127.0.0.1:8000/voice/token
 $voiceToken | Select-Object server_url, room_name, participant_identity
-```
+~~~
 
-You can also use the interactive Swagger page at `http://127.0.0.1:8000/docs` for the mutation and handoff endpoints.
+Creating an application changes local SQLite:
 
-Be careful when manually calling the travel-date endpoint: it changes the persistent local SQLite record. Use an intentionally unique idempotency key for each new logical change, and reuse that same key only when retrying the identical request.
+~~~powershell
+$body = @{
+    destination = "Japan"
+    travel_date = "2027-04-15"
+} | ConvertTo-Json
 
-## 7. Test commands
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/applications -ContentType "application/json" -Body $body
+~~~
 
-### Deterministic Python suite
+Date-update and handoff endpoints are also durable. Prefer Swagger for manual
+experiments and use unique idempotency keys for new logical date changes.
 
-This command avoids the provider-backed LLM evals:
+## 7. Tests
 
-```powershell
+### Provider-free Python
+
+~~~powershell
 uv run python -m pytest backend/tests tests evals/test_application_ids.py evals/test_retrieval.py -q
-```
+~~~
 
-Result after the simplified provider migration: `79 passed`.
+Final snapshot: <code>80 passed</code>.
 
-### Provider-backed agent-flow evals
+This covers backend validation and persistence, token policy, application
+signals, LLM fallback construction/failure handling, pending mutation state,
+application and handoff behavior, multilingual switching, lexical retrieval,
+and observability without calling an external LLM.
 
-These use the same fixed Gemini-to-Cerebras chain as the production agent, but all production tools are replaced with safe mocks:
+### Provider-backed agent flows
 
-```powershell
+~~~powershell
 uv run python -m pytest evals/test_agent_flows.py -q
-```
+~~~
 
-They require both provider API keys, network access, and may take longer or vary with provider behavior.
-
-Eight provider-backed scenarios collect successfully without making network requests. A live browser call has also exercised Gemini primary turns, Cerebras fallback turns, and Gemini recovery in one session. The evals use dynamic future dates and include tool calls plus assistant text in failure diagnostics; do not rerun repeatedly merely to obtain a green sample.
+Eight scenarios collect successfully. They use the real Gemini→Cerebras chain
+but replace production tools with safe mocks. Run deliberately because they
+need network access, valid provider keys, quota, and may vary with model
+behavior.
 
 ### Entire Python suite
 
-```powershell
+~~~powershell
 uv run python -m pytest -q
-```
+~~~
 
-This includes both deterministic and provider-backed tests.
+This includes provider-backed evals.
 
-Run the commands separately when conserving provider quota. The deterministic snapshot is fully green; provider-backed routing remains intentionally strict and may vary between providers and runs.
+### Frontend
 
-### Frontend unit tests
+~~~powershell
+npm test --prefix frontend
+npm run check --prefix frontend
+npm run build --prefix frontend
+~~~
 
-```powershell
-Set-Location frontend
-npm test
-```
+Final snapshot:
 
-Result at the documented snapshot: `10 passed` across `3` files.
+- 4 Vitest files passed;
+- 14 tests passed;
+- TypeScript passed;
+- Vite built 45 modules;
+- the main JavaScript bundle was approximately 724 kB (199 kB gzip);
+- Vite's large-chunk warning is non-blocking.
 
-### Frontend type-check only
+## 8. Manual acceptance check
 
-```powershell
-Set-Location frontend
-npm run check
-```
+A short acceptance call should cover:
 
-### Frontend production build
+1. connect and hear the greeting;
+2. read <code>APP004</code> status;
+3. mute and unmute the microphone;
+4. switch to Hinglish;
+5. ask one Japan visa question;
+6. switch back to English;
+7. create a new synthetic application or update an existing date;
+8. end the call and confirm the microphone is released;
+9. inspect the newest ignored report for normal disconnect and no terminal
+   error.
 
-```powershell
-Set-Location frontend
-npm run build
-```
+Use headphones when testing interruption or Hindi over agent speech. Short
+code-switched phrases may be misrecognized even when the STT connection is
+healthy.
 
-The build currently passes with a non-blocking large-chunk warning caused mainly by the LiveKit client path.
+## 9. Manual frontend checks
 
-## 8. Manual frontend checks
-
-After a frontend change, verify at least:
-
-- desktop and narrow/mobile widths;
-- keyboard tab order and visible focus rings;
-- the skip link to the voice dock;
-- application loading, ready, not-found, and error states;
-- microphone denied and token-failure states;
-- talk/end-call button availability across transport states;
-- transcript drawer open/closed behavior;
-- browser autoplay fallback through `Enable audio`;
-- scene pause/play control;
-- `prefers-reduced-motion: reduce` with a static scene;
-- tab hiding/restoring without a runaway canvas loop.
-
-- successful connection and agent arrival;
+- desktop and narrow widths;
+- keyboard order and visible focus;
+- Talk, Mute/Unmute, Enable audio, and End Call controls;
+- application loading, ready, not-found, retry, and error states;
+- microphone-denied and token-failure cleanup;
 - listening, thinking, speaking, reconnecting, and disconnected states;
-- remote agent audio playback;
-- orb response to remote audio only;
-- interim-to-final transcript replacement without duplicates;
-- clean microphone release after ending a call.
+- remote audio and speaking-orb response;
+- interim/final transcript replacement;
+- transcript drawer;
+- scene pause and reduced-motion static frame;
+- clean end-call and successful second call.
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
-| Symptom | Likely cause | Check |
-| --- | --- | --- |
-| Application card says service unreachable | FastAPI is stopped or Vite proxy target is unavailable | Start FastAPI on `127.0.0.1:8000` |
-| Card says not found | Configured/default ID has no SQLite record | Check `VITE_DEFAULT_APPLICATION_ID` and `/applications/{id}` |
-| Talk button reports secure-session failure | Missing/invalid LiveKit server configuration, proxy failure, or token-mint failure | Confirm the three `LIVEKIT_...` names without printing values; inspect the generic FastAPI status |
-| Browser never asks for microphone | Permission was previously blocked or no input device is available | Check browser site permissions and system input device |
-| Voice UI remains on connecting after token work | Agent was not dispatched or registered under a different name | Confirm dispatch uses exactly `waypoint-agent` |
-| Connected but silent | Browser autoplay is blocked or no remote agent audio track arrived | Use `Enable audio`; inspect LiveKit participant tracks |
-| Agent tools report service unavailable | FastAPI is stopped or `BACKEND_BASE_URL` is wrong | Check agent environment and port `8000` |
-| Agent provider startup fails | Missing/invalid provider credentials | Check variable names without printing their values |
-| Seed record differs from the table in docs | Local SQLite retains earlier mutations | Remember seeds use `INSERT OR IGNORE`; back up and recreate the local DB only if a reset is intended |
-| Frontend build warns about chunk size | LiveKit is bundled into the initial JS chunk | Non-blocking for V1; consider lazy loading/code splitting later |
+| Symptom | Check |
+| --- | --- |
+| Application card cannot connect | FastAPI must run on <code>127.0.0.1:8000</code> |
+| Card is not found | Verify the configured/default ID exists in local SQLite |
+| Secure-session request fails | Check the three server-side LiveKit variables and Vite proxy |
+| Connected but no agent | Confirm worker registration and dispatch both use <code>waypoint-agent</code> |
+| Connected but silent | Use Enable audio and inspect the remote agent track |
+| Tool reports unavailable | Verify FastAPI and <code>BACKEND_BASE_URL</code> |
+| Gemini fails immediately | Check <code>GOOGLE_API_KEY</code> and the configured model/account access |
+| Cerebras fallback returns payment/quota error | Check account access and <code>CEREBRAS_API_KEY</code> |
+| Hindi becomes incorrect English text | Confirm <code>language="multi"</code>; use a clear complete phrase and headphones |
+| Agent pauses then resumes during overlap | A VAD event had no usable transcript and LiveKit classified a false interruption |
+| Seed differs from docs | Existing databases retain mutations because seeds use <code>INSERT OR IGNORE</code> |
+| Build warns about chunk size | LiveKit is in the initial bundle; non-blocking for this local demo |
 
-## 10. Local data and reports
+## 11. Local data and reset
 
-Generated local artifacts are ignored by Git:
+Ignored generated artifacts include:
 
-```text
+~~~text
 backend/waypoint.db
 observability/reports/
 frontend/dist/
 frontend/node_modules/
-```
+agent/.env.local
+~~~
 
-The browser does not persist transcript history. The agent's end-of-session report may still contain conversation and usage data. Treat those reports as sensitive even in development, and do not share them without inspection.
+To reset synthetic application data, stop FastAPI, verify the exact database
+path, and move the file to a recoverable backup name before restarting:
 
-## 11. Scope of this runbook
+~~~powershell
+Resolve-Path -LiteralPath .\backend\waypoint.db
+Move-Item -LiteralPath .\backend\waypoint.db -Destination .\backend\waypoint.backup.db
+~~~
 
-This document covers reproducible local setup, development processes, tests,
-and troubleshooting. The project uses synthetic application data and is not
-configured for production deployment.
+Do not perform this reset against real or unverified data.
 
-For the public product overview and architecture, see the root
-[README](../README.md), [engineering case study](../project.md), and
-[architecture document](./ARCHITECTURE.md).
+Session reports can contain transcripts and provider usage. Keep them local and
+inspect them before sharing.

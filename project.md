@@ -1,150 +1,189 @@
-# Waypoint Voice Lab — Engineering case study
+# Waypoint Voice Lab — engineering case study
 
 ## Summary
 
-Waypoint is a realtime voice-support prototype built to demonstrate reliable
-agent workflows rather than a broad travel product. A traveler can ask about a
-synthetic application, check missing documents, change a future travel date,
-or request human support through speech.
+Waypoint is a full-stack voice AI travel-support prototype built to demonstrate
+how realtime conversation can be connected to typed tools and durable state
+without treating model-generated prose as business truth.
 
-The central design decision is that the language model selects and explains
-actions, while deterministic Python, FastAPI, and SQLite decide whether those
-actions are valid and whether durable state may change.
+A caller can create or inspect a synthetic application, check missing
+documents, change a future travel date after confirmation, request human
+support, and ask grounded questions about Japan tourist-visa preparation. The
+same call can switch between English and natural Hindi/Hinglish.
+
+The project is intentionally a local reference prototype. It has no airline
+inventory, payments, government submission, user authentication, or live human
+transfer.
 
 ## The engineering problem
 
-A voice agent has several probabilistic boundaries at once:
+A voice application crosses several probabilistic boundaries:
 
-- speech may be segmented or transcribed imperfectly;
-- the LLM may choose the wrong tool or take multiple tool steps in one turn;
-- network and provider latency can make otherwise-correct speech feel broken;
-- a fluent response can hide an incorrectly ordered side effect;
-- frontend transcript text is not trustworthy business state.
+- the microphone and VAD may treat speech as noise or noise as speech;
+- multilingual STT may misrecognize short or code-switched phrases;
+- an LLM may choose the wrong tool or produce an overly long spoken answer;
+- providers may time out or exhaust quota;
+- a fluent answer may hide an incorrectly ordered side effect;
+- transcript text and data messages are unsafe sources of UI business state.
 
-Waypoint was designed to make those failure modes visible, testable, and
-recoverable.
-
-The local V1 is functionally complete: its full browser voice path, guarded
-mutation, explicit handoff, application-card refresh, observability, and clean
-disconnect have been exercised in a recorded session.
+Waypoint makes those boundaries visible and gives deterministic services
+ownership of the facts that matter.
 
 ## System design
 
-```mermaid
+~~~mermaid
 flowchart LR
     Browser[React voice UI] <--> Room[LiveKit room]
     Room <--> Agent[Python voice agent]
-    Agent --> Providers[Deepgram + Gemini/Cerebras + Cartesia]
+    Agent --> Speech[Deepgram STT + Cartesia TTS]
+    Agent --> Models[Gemini → Cerebras]
     Agent --> API[FastAPI tools]
-    Browser --> API
+    Browser -->|authoritative reads| API
     API <--> SQLite[(SQLite)]
-    Agent -. canonical ID only .-> Browser
-```
+    Agent --> Knowledge[Curated FAQ + Japan visa data]
+    Agent -. application ID only .-> Browser
+    Agent --> Reports[Local session reports]
+~~~
 
-Three data planes remain intentionally separate:
+Three data planes stay separate:
 
-1. **Realtime conversation:** LiveKit transports microphone audio, agent audio,
-   transcript events, and agent state.
-2. **Business data:** typed HTTP endpoints validate reads and mutations; SQLite
-   is the source of truth.
+1. **Realtime conversation:** LiveKit carries microphone audio, agent audio,
+   transcripts, participant state, and application notifications.
+2. **Business data:** FastAPI validates typed requests and owns all SQLite reads
+   and writes.
 3. **UI synchronization:** the agent publishes only a canonical application ID;
-   the browser refetches FastAPI before rendering an update.
+   React validates it and refetches FastAPI before rendering.
 
-## Reliability mechanisms
+## Final feature set
 
-### Prepare, confirm, apply
+### Voice experience
 
-A date change is split into two tools. Preparation verifies the application and
-future date and stores a proposal plus an idempotency key in session state. A
-later finalized user turn must pass a conservative deterministic confirmation
-classifier before the apply tool can call FastAPI.
+The React client owns the LiveKit room and published microphone track outside
+the component render lifecycle. It handles token acquisition, microphone
+permission, connection, reconnecting, remote audio, transcripts, cleanup, and
+autoplay recovery.
 
-Natural confirmations such as “Yeah, please change it” are accepted. Vetoes,
-questions, vague acknowledgements, and replacement dates are rejected. A
-correction prepares a new proposal and clears earlier consent.
+Mute/unmute calls <code>mute()</code> and <code>unmute()</code> on the existing
+local audio track. It does not recreate the track or reconnect the room.
 
-### Explicit opt-in handoff
+Deepgram Nova-3 runs with <code>language="multi"</code>. The session starts in
+English. A typed <code>set_spoken_language</code> tool changes Cartesia between
+English and Hindi output and records the active language in session state.
+Hindi mode defaults to natural Hinglish while preserving familiar travel terms
+in Latin script.
 
-The backend retains a complete handoff reason enum, but the V1 voice agent may
-create a request only when the latest finalized user turn explicitly asks for
-a human. The gate runs before identifier normalization, interruption locking,
-or HTTP. Missing dates, confusion, corrections, and automatic escalation
-reasons therefore produce no side effect.
+### Provider fallback
 
-The deterministic grammar scopes negation to the handoff request rather than
-rejecting any sentence containing “not.” It accepts natural requests such as
-“This is not working; connect me to a human,” while rejecting negated requests
-and informational speech such as “I want to know what a support agent does.”
+The agent constructs a fixed LiveKit fallback chain:
 
-### Idempotent durable updates
+1. Gemini <code>gemini-3.5-flash-lite</code>
+2. Cerebras <code>gpt-oss-120b</code>
 
-FastAPI applies the travel-date update and stores its idempotency result in one
-transaction. Retrying the same logical operation returns the recorded result;
-reusing its key for a different request conflicts.
+Each provider has a bounded connection timeout and no per-provider retry. The
+adapter does not switch after streamed content or a tool call has started,
+reducing the risk of duplicate speech or repeated durable operations. A
+separate terminal failure handler speaks a short recovery message only if the
+whole configured chain fails.
 
-### Grounded reads and frontend trust
+### Synthetic application workflows
 
-Current application facts always come from application tools. General support
-answers use a curated local FAQ retriever. The frontend never derives status or
-dates from assistant prose or LiveKit data messages; it validates an ID-only
-hint and refetches the API.
+FastAPI supports:
 
-### Observable sessions
+- creating an application from a destination and future travel date;
+- reading status, destination, and travel date;
+- reading missing documents;
+- applying an idempotent travel-date update;
+- creating a durable human-support request.
 
-The agent records turn metrics, tool calls, usage, state transitions, chat
-history, and shutdown reason through current LiveKit Agents 1.7 APIs. Reports
-are formatted JSON, ignored by Git, and written defensively so shutdown cannot
-fail because reporting failed.
+The backend generates canonical <code>APP###</code> and
+<code>HOF-...</code> identifiers. The model never invents a successful result.
 
-## Failures found through real calls
+New-application and date-change conversations ask for only missing details,
+summarize the proposal once, and wait for natural confirmation before calling
+the creation or apply tool. The date-change implementation keeps a prepared
+application ID, date, and idempotency key in per-session state.
 
-### Mutation happened before the spoken confirmation
+The conversational confirmation decision is intentionally handled by the
+prompt and LLM rather than a large phrase classifier. Deterministic protection
+still exists at the data boundary: dates must be in the future, pending state
+must exist before apply, backend errors cannot be presented as success, and
+retries of the same date mutation return the transactionally stored result.
 
-In an early recorded session, `prepare_travel_date_change` returned
-`confirmation_required`, but Groq immediately called the apply tool in the same
-LLM/tool loop. SQLite changed before the assistant asked “Is that correct?”
+### Grounded support and visa guidance
 
-The fix was not merely another prompt sentence. Session state now records
-deterministic confirmation, preparation resets it, and the apply tool refuses
-to open the HTTP mutation unless a later finalized turn grants consent.
+One cached lexical retriever serves compact answers from
+<code>knowledge/faqs.json</code>. It scores exact questions, phrase and token
+overlap, curated keywords, required destination terms, and exclusive visa
+queries. Unsupported questions return a no-result response rather than a
+plausible invention.
 
-### Safe flow became too rigid
+Visa coverage is deliberately limited to short-term Japan tourism for an
+ordinary Indian passport holder who resides and applies in India. The entries
+include official Embassy/VFS links and review dates. Spoken answers cover only
+the question asked and remind the caller to verify current requirements.
 
-An exact phrase allowlist caused natural speech such as “Yes. Confirmed.” to be
-rejected and encouraged double confirmation. The classifier was replaced with
-a bounded voice-native grammar: affirmative/action intent is accepted, while
-negative language, corrections, questions, and date-like replacements veto it.
+## Failures that shaped the implementation
 
-The prompt was also consolidated substantially and made explicit about
-preparing before asking exactly one confirmation.
+### Model-side confirmation was initially unsafe
 
-A later provider-backed eval exposed one more prompt-adherence failure: despite
-receiving a complete month, day, and four-digit year, the model asked for the
-year or confirmation before preparation. The eval now prints tool calls and
-assistant text on failure, uses a future date derived from the current day, and
-the tool guidance defines preparation as mandatory non-mutating validation.
+An early provider-backed call prepared a travel-date change and then attempted
+the apply tool within the same tool loop. The project first responded with a
+large deterministic confirmation grammar. That protected the mutation but
+made normal voice conversation rigid and difficult to maintain.
 
-### Incomplete date caused an unnecessary handoff
+The final design keeps the separate prepare/apply tools, session pending state,
+backend future-date validation, transactional idempotency, focused prompt
+instructions, and behavioral evals. It removes the large phrase grammar and
+documents the resulting boundary honestly: natural confirmation is model
+behavior, while data validity and retry safety are code-owned.
 
-A real LiveKit-UI call produced `handoff_to_human(...,
-repeated_clarification_failure)` on the first incomplete date request. Because
-handoff creation is durable, prompt guidance alone was insufficient. The V1
-agent now accepts only `user_request`, backed by a deterministic classifier of
-the latest finalized transcript. Tests prove rejected attempts cause zero HTTP
-calls and zero interruption locks.
+### Generic latency fillers queued behind real answers
 
-### Choppy audio required separating lifecycle from streaming
+A custom two-second timer called <code>session.say()</code> whenever the agent
+was still marked as thinking. Reports showed that the main reply already owned
+the earlier speech position, so the filler could be synthesized and played
+after the real answer—especially when that answer was long.
 
-One custom-UI session produced 20.72 seconds of Cartesia audio but occupied
-32.08 seconds of speaking time. Reports showed that the previous room had
-closed cleanly and the new session used a different job and room, ruling out a
-leaked call. A nearby LiveKit-UI run was substantially smoother, while two
-false interruption/resume events explained some perceived pauses.
+The generic filler was removed. Current tools are local or use short backend
+timeouts, so the UI thinking state is sufficient. If a future external tool is
+genuinely slow, LiveKit's tool-scoped filler context is the appropriate place
+to add progress speech.
 
-The result was a narrower diagnosis: intermittent provider/WebRTC/browser
-streaming remained possible, but session cleanup was not the cause. This is
-exactly why transport, provider, and application metrics are reported
-separately.
+### One LLM provider was not enough for longer calls
+
+The earlier Groq setup repeatedly hit its free-tier token-per-minute limit in
+long conversations. Moving to Gemini with Cerebras fallback separated the
+application from one provider's quota and demonstrated LiveKit's bounded
+fallback behavior. A real call showed Gemini fail over to Cerebras and later
+recover, without changing the tools, STT, TTS, backend, or frontend.
+
+### Hindi interruption exposed an acoustic/STT boundary
+
+Multilingual calls proved that the model and TTS can produce useful Hinglish.
+They also showed that short Hindi speech spoken over agent audio may trigger
+VAD without producing a usable Deepgram transcript. LiveKit then correctly
+classifies the event as a false interruption and resumes the answer.
+
+This is treated as a provider/acoustic limitation, not hidden with application
+logic. Headphones, clear phrases, and suitable microphone capture help; keyterm
+prompting and voice isolation remain optional experiments rather than committed
+complexity.
+
+## Observability
+
+Every completed agent session writes an ignored JSON report containing:
+
+- chat and tool-call ordering;
+- agent and user state transitions;
+- transcription, LLM, and TTS usage;
+- available end-of-turn, first-token, first-audio, and end-to-end metrics;
+- interruption and false-interruption events;
+- close reason and terminal error state.
+
+Reports were used to distinguish provider fallback from total failure, detect
+queued filler speech, confirm tool outputs, inspect multilingual transcripts,
+and verify clean participant disconnects. They may contain conversation text
+and must remain private.
 
 ## Verification evidence
 
@@ -152,64 +191,57 @@ Snapshot date: 2026-08-31.
 
 | Evidence | Result |
 | --- | --- |
-| Provider-free Python suite | 79 passed |
-| Provider-backed agent-flow evals | 8 scenarios collected; live Gemini-to-Cerebras fallback and Gemini recovery passed |
-| Frontend tests | 10 passed across 3 files |
-| TypeScript check and Vite production build | Passed |
-| Backend tests | Temporary SQLite through FastAPI lifespan; development DB untouched |
-| Real browser calls | Microphone/STT, audio, transcript/state, application context, confirmed update, and clean disconnect exercised |
+| Provider-free Python suite | 80 passed |
+| Provider-backed agent-flow evals | 8 scenarios collect successfully |
+| Frontend unit suite | 14 passed across 4 files |
+| TypeScript check and Vite build | Passed |
+| Latest multilingual live call | Four tool calls, English/Hinglish switching, grounded application and Japan guidance, no generic filler speech, clean disconnect |
+| Fallback live call | Gemini primary, Cerebras fallback, and later Gemini recovery observed |
 
-In the final recorded call, seven measured assistant turns had `1.849s` median
-and `1.959s` maximum end-to-end latency. Median steady-state LLM first-token
-latency was `0.471s`, and median TTS first-audio latency was `0.094s`. The
-longer perceived delay came mainly from response speech duration, so these are
-diagnostic figures from one call rather than benchmark claims.
+Provider-backed evals and human calls remain variable and are intentionally
+reported separately from deterministic unit and backend tests.
 
-Provider-backed behavior is measured separately from deterministic safety
-invariants. An earlier complete-date routing miss remains documented as a
-failure found by the eval; the final complete run passed after targeted
-prepare-first guidance, without retries or weaker assertions.
+## Tradeoffs and limitations
 
-## Tradeoffs
+- SQLite and synthetic records keep persistence understandable but are not a
+  production identity or authorization system.
+- Natural confirmation and handoff intent are LLM-governed workflow behavior;
+  backend validation and idempotency do not replace authentication.
+- The visa corpus is curated, narrow, and dated instead of broad or live.
+- Explicit runtime language switching is more predictable than automatic
+  per-sentence TTS switching.
+- Deepgram code-switching and interruptions can vary with accent, phrasing,
+  overlap, and microphone conditions.
+- Preemptive generation is disabled to avoid wasted provider work on cancelled
+  turns.
+- Session reports are useful locally but need a retention and redaction policy
+  before any real deployment.
+- The current frontend bundle is large because LiveKit ships in the initial
+  path; code splitting remains an optional engineering follow-up.
 
-- Preemptive generation is disabled for the current provider setup to
-  avoid discarded speculative requests. This favors predictable quota use over
-  the lowest possible response-start latency.
-- SQLite and synthetic records keep the demo understandable. They are not a
-  substitute for authenticated, authorized production storage.
-- Reports are local and useful for engineering, but they may contain transcript
-  content and require a real retention/redaction policy before deployment.
-- A recorded local demo is the delivery target. Public hosting is intentionally
-  deferred because it would require authentication, authorization, rate limits,
-  origin controls, secret management, TLS, and abuse prevention.
-- A public source repository is separate from public hosting. Development can
-  continue openly through reviewed branches while every runtime service remains
-  local and synthetic.
-- Canonical IDs remain `APP004` in tools and transcripts. A deterministic
-  TTS-only formatter for more natural spoken IDs is useful V1.1 polish, not a
-  prerequisite for the validated V1 workflow.
+## Engineering outcomes
 
-## What this project demonstrates
+- A complete realtime STT → LLM/tools → TTS application.
+- Full-stack coordination between LiveKit, React, FastAPI, and SQLite.
+- Typed tool and HTTP boundaries around probabilistic model behavior.
+- Transactional idempotency for a durable voice-triggered mutation.
+- Runtime provider fallback without rewriting the application workflow.
+- Curated lexical grounding without a vector database.
+- English/Hindi/Hinglish voice switching with canonical tool data.
+- Evidence-led debugging through session reports and focused evals.
+- Intentional scope control: useful travel-support workflows without presenting
+  the prototype as a booking or government visa platform.
 
-- Building a realtime STT → LLM/tools → TTS application with LiveKit.
-- Designing deterministic safety boundaries around probabilistic tool routing.
-- Implementing idempotent mutations and isolated database tests.
-- Connecting voice state to a typed React UI without trusting model prose.
-- Diagnosing real call failures from latency, usage, state, and tool traces.
-- Separating deterministic CI from provider-backed behavioral evaluation.
+## Conclusion
 
-## Resume-ready summary
+Waypoint combines realtime voice interaction with explicit system boundaries:
+LiveKit carries audio, Deepgram and Cartesia handle speech, Gemini with
+Cerebras fallback drives conversation and typed tool selection, and FastAPI
+with SQLite owns durable application state. A compact lexical retriever grounds
+support and Japan visa answers, while tests, provider-backed evals, and session
+reports provide evidence about behavior across deterministic and probabilistic
+parts of the system.
 
-- Built a realtime LiveKit voice-support application using Deepgram STT,
-  Gemini/Cerebras tool routing, Cartesia TTS, FastAPI, SQLite, React, and
-  TypeScript.
-- Designed deterministic confirmation and explicit-handoff gates that prevent
-  premature or unintended durable side effects even when the LLM selects an
-  unsafe tool.
-- Added idempotent transaction handling, temporary-database backend tests,
-  provider-backed conversation evals, and session-level latency/usage reports
-  used to diagnose failures from real calls.
-
-See [the README](./README.md) for setup and repository navigation, and
-[the architecture document](./docs/ARCHITECTURE.md) for the detailed system
+See [the README](./README.md) for setup and
+[the architecture document](./docs/ARCHITECTURE.md) for detailed runtime
 boundaries.
