@@ -389,7 +389,8 @@ The local ignored file is `agent/.env.local`. Never commit its values.
 | `LIVEKIT_API_KEY` | Server/agent LiveKit credential |
 | `LIVEKIT_API_SECRET` | Server/agent LiveKit credential |
 | `DEEPGRAM_API_KEY` | Streaming speech-to-text provider |
-| `GROQ_API_KEY` | Agent LLM provider and provider-backed evals |
+| `GOOGLE_API_KEY` | Gemini LLM provider and provider-backed evals |
+| `CEREBRAS_API_KEY` | Cerebras fallback provider and provider-backed evals |
 | `CARTESIA_API_KEY` | Text-to-speech provider |
 | `BACKEND_BASE_URL` | Agent-to-FastAPI base URL; defaults to `http://127.0.0.1:8000` |
 

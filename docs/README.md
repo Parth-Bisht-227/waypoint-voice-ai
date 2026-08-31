@@ -17,7 +17,7 @@ In practical terms, the language model may decide which operation is relevant, b
 The project has three substantial pieces:
 
 1. A FastAPI and SQLite backend with application reads, missing-document reads, idempotent travel-date updates, and durable handoff requests.
-2. A LiveKit Python voice agent using Deepgram STT, Groq for tool-calling conversation, Cartesia TTS, deterministic confirmation tracking, grounded FAQ retrieval, and session reporting.
+2. A LiveKit Python voice agent using Deepgram STT, Gemini with Cerebras fallback for tool-calling conversation, Cartesia TTS, deterministic confirmation tracking, grounded FAQ retrieval, and session reporting.
 3. A polished Vite, React, and TypeScript browser interface with a real LiveKit client layer, live transcript handling, remote-audio playback and amplitude, authoritative application reads, and a decorative pixel-art journey scene.
 
 The two server-to-client links needed for the first browser conversation are now implemented:

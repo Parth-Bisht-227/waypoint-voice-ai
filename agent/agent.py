@@ -16,6 +16,7 @@ from livekit.agents import (
     TurnHandlingOptions,
     function_tool,
     inference,
+    llm,
     utils,
 )
 from livekit.agents.voice.agent_session import SessionConnectOptions
@@ -38,8 +39,9 @@ from observability.session_observer import (
 
 from livekit.plugins import (
     cartesia,
+    cerebras,
     deepgram,
-    groq,
+    google,
     silero,
 )
 
@@ -62,6 +64,30 @@ BACKEND_BASE_URL = os.getenv(
     "BACKEND_BASE_URL",
     "http://127.0.0.1:8000"
 )
+
+
+def create_llm() -> llm.LLM:
+    """Create the fixed Gemini-to-Cerebras fallback chain."""
+
+    gemini = google.LLM(
+        model="gemini-3.5-flash-lite",
+        max_output_tokens=256,
+        thinking_config={"thinking_level": "minimal"},
+    )
+    cerebras_fallback = cerebras.LLM(
+        model="gpt-oss-120b",
+        reasoning_effort="low",
+        temperature=0.2,
+        parallel_tool_calls=False,
+    )
+    return llm.FallbackAdapter(
+        [gemini, cerebras_fallback],
+        attempt_timeout=12.0,
+        max_retry_per_llm=0,
+        retry_interval=0.5,
+        retry_on_chunk_sent=False,
+    )
+
 
 # helper fn, needed to ensure that stt mmisheard application id is not passed directly to the agent
 def normalize_application_id(value:str) -> str | None:
@@ -90,7 +116,7 @@ def normalize_application_id(value:str) -> str | None:
     # Keep only digits
     digits = "".join(re.findall(r"\d", normalized))
 
-    # Groq/STT sometimes gives "0001" instead of "001"
+    # STT sometimes gives "0001" instead of "001"
     if len(digits) == 4 and digits.startswith("0"):
         digits = digits[-3:]
 
@@ -608,10 +634,7 @@ async def waypoint_agent(ctx: agents.JobContext):
             language="en",
         ),
         
-        llm=groq.LLM(
-                model="openai/gpt-oss-20b",
-                reasoning_effort="low",
-        ),
+        llm=create_llm(),
 
         tts = cartesia.TTS(
             model = "sonic-3.5",
@@ -630,9 +653,9 @@ async def waypoint_agent(ctx: agents.JobContext):
         ),
         conn_options=SessionConnectOptions(
             llm_conn_options=APIConnectOptions(
-                max_retry=2,
-                retry_interval=5.0,
-                timeout=6.0,
+                max_retry=0,
+                retry_interval=0.5,
+                timeout=12.0,
             ),
         ),
     )
