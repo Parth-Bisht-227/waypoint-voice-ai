@@ -9,7 +9,7 @@ The project expects:
 - Node.js and npm suitable for Vite 8;
 - the LiveKit CLI (`lk`) for agent development;
 - a LiveKit project or local LiveKit server;
-- provider credentials for Deepgram, Groq, and Cartesia when running the real agent.
+- provider credentials for Deepgram, Google Gemini, Cerebras, and Cartesia when running the real agent.
 
 The documentation audit passed with:
 
@@ -53,7 +53,8 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=
 LIVEKIT_API_SECRET=
 DEEPGRAM_API_KEY=
-GROQ_API_KEY=
+GOOGLE_API_KEY=
+CEREBRAS_API_KEY=
 CARTESIA_API_KEY=
 BACKEND_BASE_URL=http://127.0.0.1:8000
 ```
@@ -168,19 +169,19 @@ This command avoids the provider-backed LLM evals:
 uv run python -m pytest backend/tests tests evals/test_application_ids.py evals/test_retrieval.py -q
 ```
 
-Result at the documented snapshot: `145 passed`.
+Result after the simplified provider migration: `79 passed`.
 
 ### Provider-backed agent-flow evals
 
-These use a real Groq LLM, but all production tools are replaced with safe mocks:
+These use the same fixed Gemini-to-Cerebras chain as the production agent, but all production tools are replaced with safe mocks:
 
 ```powershell
 uv run python -m pytest evals/test_agent_flows.py -q
 ```
 
-They require `GROQ_API_KEY`, network access, and may take longer or vary with provider behavior.
+They require both provider API keys, network access, and may take longer or vary with provider behavior.
 
-Latest complete result: `7 passed`. The evals use dynamic future dates and include tool calls plus assistant text in failure diagnostics. They remain strict and provider-variable; do not rerun repeatedly merely to obtain a green sample.
+Eight provider-backed scenarios collect successfully without making network requests. A live browser call has also exercised Gemini primary turns, Cerebras fallback turns, and Gemini recovery in one session. The evals use dynamic future dates and include tool calls plus assistant text in failure diagnostics; do not rerun repeatedly merely to obtain a green sample.
 
 ### Entire Python suite
 
@@ -190,7 +191,7 @@ uv run python -m pytest -q
 
 This includes both deterministic and provider-backed tests.
 
-Run the commands separately when conserving provider quota. The deterministic snapshot is fully green; provider-backed routing remains intentionally strict and may vary between Groq runs.
+Run the commands separately when conserving provider quota. The deterministic snapshot is fully green; provider-backed routing remains intentionally strict and may vary between providers and runs.
 
 ### Frontend unit tests
 

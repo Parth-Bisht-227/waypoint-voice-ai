@@ -96,8 +96,8 @@ def test_attach_session_observers_logs_current_livekit_metrics(caplog) -> None:
                 usage=AgentSessionUsage(
                     model_usage=[
                         LLMModelUsage(
-                            provider="groq",
-                            model="openai/gpt-oss-20b",
+                            provider="gemini",
+                            model="gemini-3.5-flash-lite",
                             input_tokens=42,
                         )
                     ]

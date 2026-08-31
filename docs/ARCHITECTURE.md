@@ -31,7 +31,7 @@ flowchart TB
         Room[LiveKit room]
         Agent["waypoint-agent<br/>LiveKit AgentSession"]
         STT[Deepgram STT]
-        LLM[Groq LLM]
+        LLM[Gemini LLM<br/>Cerebras fallback]
         TTS[Cartesia TTS]
     end
 
@@ -73,7 +73,7 @@ LiveKit transports microphone audio, remote agent audio, participant attributes,
 flowchart LR
     Mic[Traveler microphone] --> LKIn[LiveKit room]
     LKIn --> STT[Deepgram transcription]
-    STT --> LLM[Groq reasoning and tool choice]
+    STT --> LLM[Gemini reasoning and tool choice<br/>Cerebras fallback]
     LLM --> Tool[Typed function tool]
     Tool --> API[FastAPI]
     API --> Tool
@@ -85,7 +85,9 @@ flowchart LR
 
 Silero VAD determines whether speech is present. LiveKit's turn detector decides whether the user's conversational turn has ended. The agent publishes its official state through the `lk.agent.state` participant attribute; the frontend maps that state to listening, thinking, speaking, and related UI labels.
 
-Preemptive LLM generation is currently disabled. This gives up a small speculative-latency opportunity in exchange for avoiding discarded Groq requests when final STT text arrives in multiple chunks; the endpointing bounds are unchanged.
+Preemptive LLM generation is currently disabled. This gives up a small speculative-latency opportunity in exchange for avoiding discarded provider requests when final STT text arrives in multiple chunks; the endpointing bounds are unchanged.
+
+The small `create_llm` helper in `agent.py` fixes the provider order as Gemini followed by Cerebras. LiveKit's fallback adapter moves to Cerebras without retrying Gemini and never retries after streamed text or a tool call has begun, preventing duplicate speech and durable actions.
 
 ### 3.2 Business-data plane
 

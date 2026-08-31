@@ -34,7 +34,7 @@ disconnect have been exercised in a recorded session.
 flowchart LR
     Browser[React voice UI] <--> Room[LiveKit room]
     Room <--> Agent[Python voice agent]
-    Agent --> Providers[Deepgram + Groq + Cartesia]
+    Agent --> Providers[Deepgram + Gemini/Cerebras + Cartesia]
     Agent --> API[FastAPI tools]
     Browser --> API
     API <--> SQLite[(SQLite)]
@@ -148,12 +148,12 @@ separately.
 
 ## Verification evidence
 
-Snapshot date: 2026-08-23.
+Snapshot date: 2026-08-31.
 
 | Evidence | Result |
 | --- | --- |
-| Provider-free Python suite | 145 passed |
-| Groq-backed agent-flow evals | 7 passed on the latest complete run |
+| Provider-free Python suite | 79 passed |
+| Provider-backed agent-flow evals | 8 scenarios collected; live Gemini-to-Cerebras fallback and Gemini recovery passed |
 | Frontend tests | 10 passed across 3 files |
 | TypeScript check and Vite production build | Passed |
 | Backend tests | Temporary SQLite through FastAPI lifespan; development DB untouched |
@@ -172,7 +172,7 @@ prepare-first guidance, without retries or weaker assertions.
 
 ## Tradeoffs
 
-- Preemptive generation is disabled for the current free-tier Groq setup to
+- Preemptive generation is disabled for the current provider setup to
   avoid discarded speculative requests. This favors predictable quota use over
   the lowest possible response-start latency.
 - SQLite and synthetic records keep the demo understandable. They are not a
@@ -200,8 +200,9 @@ prepare-first guidance, without retries or weaker assertions.
 
 ## Resume-ready summary
 
-- Built a realtime LiveKit voice-support application using Deepgram STT, Groq
-  tool routing, Cartesia TTS, FastAPI, SQLite, React, and TypeScript.
+- Built a realtime LiveKit voice-support application using Deepgram STT,
+  Gemini/Cerebras tool routing, Cartesia TTS, FastAPI, SQLite, React, and
+  TypeScript.
 - Designed deterministic confirmation and explicit-handoff gates that prevent
   premature or unintended durable side effects even when the LLM selects an
   unsafe tool.

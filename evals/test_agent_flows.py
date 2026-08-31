@@ -7,9 +7,8 @@ import pytest
 
 from livekit.agents import APIConnectOptions, AgentSession, mock_tools
 from livekit.agents.voice.agent_session import SessionConnectOptions
-from livekit.plugins import groq
 
-from agent.agent import WayPointAssistant, WaypointSessionState
+from agent.agent import WayPointAssistant, WaypointSessionState, create_llm
 
 
 def function_calls(result) -> list[tuple[str, dict]]:
@@ -167,19 +166,16 @@ def safe_tool_mocks(
     return mocks
 
 
-def groq_llm() -> groq.LLM:
-    return groq.LLM(
-        model="openai/gpt-oss-20b",
-        reasoning_effort="low",
-    )
+def provider_llm():
+    return create_llm()
 
 
 def eval_session_connect_options() -> SessionConnectOptions:
     return SessionConnectOptions(
         llm_conn_options=APIConnectOptions(
-            max_retry=1,
-            retry_interval=1.0,
-            timeout=6.0,
+            max_retry=0,
+            retry_interval=0.5,
+            timeout=12.0,
         )
     )
 
@@ -189,9 +185,9 @@ async def run_single_turn(
     *,
     tool_overrides: dict[str, Callable] | None = None,
 ):
-    """Run one Groq-backed turn in a new session with all tools mocked."""
+    """Run one provider-backed turn in a new session with all tools mocked."""
     async with AgentSession[WaypointSessionState](
-        llm=groq_llm(),
+        llm=provider_llm(),
         userdata=WaypointSessionState(),
         conn_options=eval_session_connect_options(),
     ) as session:
@@ -213,7 +209,7 @@ async def test_travel_date_prepares_before_natural_confirmation():
     expected_date = requested_date.isoformat()
 
     async with AgentSession[WaypointSessionState](
-        llm=groq_llm(),
+        llm=provider_llm(),
         userdata=WaypointSessionState(),
         conn_options=eval_session_connect_options(),
     ) as session:
@@ -269,7 +265,7 @@ async def test_new_application_requires_confirmation_before_creation():
     expected_date = requested_date.isoformat()
 
     async with AgentSession[WaypointSessionState](
-        llm=groq_llm(),
+        llm=provider_llm(),
         userdata=WaypointSessionState(),
         conn_options=eval_session_connect_options(),
     ) as session:

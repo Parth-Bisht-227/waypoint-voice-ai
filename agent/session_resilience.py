@@ -55,10 +55,14 @@ def schedule_latency_filler(
 
 
 def attach_llm_failure_handler(session: AgentSession) -> None:
-    """Speak a short recovery message after LiveKit exhausts LLM retries."""
+    """Speak after the configured LLM or fallback chain is exhausted."""
 
     def on_error(event: ErrorEvent) -> None:
         if not isinstance(event.error, LLMError) or event.error.recoverable:
+            return
+        if event.source is not session.llm:
+            # An underlying provider may fail while the configured fallback
+            # adapter is still able to complete the turn.
             return
 
         try:

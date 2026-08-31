@@ -11,13 +11,13 @@ def test_summary_reports_metrics_without_transcript_text(tmp_path: Path) -> None
             {
                 "type": "error",
                 "created_at": 11.0,
-                "source": {"provider": "groq", "model": "test-model"},
+                "source": {"provider": "gemini", "model": "test-model"},
                 "error": {"recoverable": True},
             },
             {
                 "type": "error",
                 "created_at": 12.0,
-                "source": {"provider": "groq", "model": "test-model"},
+                "source": {"provider": "gemini", "model": "test-model"},
                 "error": {"recoverable": False},
             },
             {
@@ -66,7 +66,7 @@ def test_summary_reports_metrics_without_transcript_text(tmp_path: Path) -> None
         },
         "usage": [
             {
-                "provider": "groq",
+                "provider": "gemini",
                 "model": "test-model",
                 "input_tokens": 100,
                 "output_tokens": 20,
@@ -79,7 +79,7 @@ def test_summary_reports_metrics_without_transcript_text(tmp_path: Path) -> None
     assert "E2E latency: n=1 p50=0.500s p95=0.500s max=0.500s" in summary
     assert "apply_pending_travel_date_change: ok 0.050s" in summary
     assert "Mutation: succeeded (changed=true)" in summary
-    assert "groq / test-model: retryable=1 terminal=1" in summary
+    assert "gemini / test-model: retryable=1 terminal=1" in summary
     assert "Shutdown: participant_disconnected" in summary
     assert "private caller text" not in summary
     assert "private assistant text" not in summary

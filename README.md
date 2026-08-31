@@ -23,7 +23,8 @@ the custom browser UI with a recorded, full voice session.
 
 - Joins a LiveKit room from a React browser client and streams microphone and
   agent audio.
-- Transcribes speech with Deepgram, routes typed tools with Groq, and speaks
+- Transcribes speech with Deepgram, routes typed tools through Gemini with
+  Cerebras fallback, and speaks
   responses with Cartesia.
 - Reads application status and missing documents from FastAPI and SQLite.
 - Prepares a travel-date change, waits for a later deterministic confirmation,
@@ -50,7 +51,7 @@ flowchart LR
     UI <--> LK[LiveKit room]
     LK <--> Agent[LiveKit Python agent]
     Agent --> STT[Deepgram STT]
-    Agent --> LLM[Groq tool routing]
+    Agent --> LLM[Gemini with Cerebras fallback]
     Agent --> TTS[Cartesia TTS]
     Agent --> API[FastAPI application API]
     UI -->|authoritative reads| API
@@ -81,7 +82,7 @@ The LLM never writes SQLite directly.
 | --- | --- |
 | Realtime transport | LiveKit Cloud and `livekit-agents` 1.7.0 |
 | Speech | Deepgram Nova-3 STT and Cartesia Sonic 3.5 TTS |
-| Reasoning/tool routing | Groq `openai/gpt-oss-20b`, low reasoning effort |
+| Reasoning/tool routing | Gemini `gemini-3.5-flash-lite`, with Cerebras `gpt-oss-120b` fallback |
 | Agent workflow | Python 3.11, typed tools, per-session deterministic state |
 | API and persistence | FastAPI, Pydantic, `aiosqlite`, SQLite |
 | Frontend | React 19, TypeScript, Vite, LiveKit Client |
@@ -91,7 +92,7 @@ The LLM never writes SQLite directly.
 
 Prerequisites: Python 3.11, [`uv`](https://docs.astral.sh/uv/), Node.js,
 the LiveKit CLI, a LiveKit project, and provider credentials for Deepgram,
-Groq, and Cartesia.
+Google Gemini, Cerebras, and Cartesia.
 
 ```powershell
 git clone https://github.com/Parth-Bisht-227/waypoint-voice-ai.git
@@ -124,12 +125,12 @@ troubleshooting, database reset, and test commands are in
 
 ## Verification snapshot
 
-Snapshot date: 2026-08-23.
+Snapshot date: 2026-08-31.
 
 | Suite | Latest result | Notes |
 | --- | --- | --- |
-| Provider-free Python | 145 passed | Backend, temporary DB isolation, token policy, signals, confirmation/handoff gates, retrieval, observability |
-| Groq-backed agent flows | 7 passed | All six tools are safely mocked; the latest complete flow suite passed while remaining provider-variable |
+| Provider-free Python | 79 passed | Backend, temporary DB isolation, token policy, signals, fallback safety, confirmation/handoff gates, retrieval, observability |
+| Provider-backed agent flows | 8 scenarios collected; live fallback call passed | Gemini handled primary turns, Cerebras handled fallback turns, and Gemini recovered later in the same session |
 | Frontend unit tests | 10 passed across 3 files | Token parsing, voice boundaries, transcript/state behavior, application validation |
 | TypeScript and Vite build | Passed | 45 modules; current main bundle is approximately 723 kB before optional code splitting |
 
